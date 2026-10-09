@@ -144,7 +144,30 @@ export function render(root) {
           }
         } }, '清空数据'))));
 
-  if (auth.isAdmin) page.append(h('div', { class: 'hint' }, `管理员内置账号：${ADMIN.account} · 昵称「${ADMIN.nick}」`));
+  if (auth.isAdmin) {
+    const users = store.list('users');
+    page.append(h('div', { class: 'section-title' }, '账号管理'),
+      h('div', { class: 'provider-card' },
+        h('div', { class: 'hint', style: { marginTop: '0', marginBottom: '14px' } },
+          `内置管理员 ${ADMIN.account}（${ADMIN.nick}）始终可登录。下面是通过「申请授权」注册的账号，授权后才能进入。`),
+        users.length
+          ? h('div', {}, ...users.map(u => h('div', { class: 'list-row', style: { marginBottom: '8px' } },
+            h('span', { class: 'avatar' }, u.nick.slice(0, 1)),
+            h('div', { class: 'list-main' },
+              h('div', { class: 'list-title' }, u.nick),
+              h('div', { class: 'list-meta' }, u.account + ' · ' + (u.approved ? '已授权' : '待授权'))),
+            h('button', {
+              class: 'node-btn' + (u.approved ? '' : ' primary'),
+              onclick: () => { u.approved = !u.approved; store.save(); render(root); }
+            }, u.approved ? '撤销授权' : '授权进入'),
+            h('button', { class: 'node-btn', onclick: async () => {
+              if (await confirm(`删除账号「${u.nick}」？`)) {
+                const arr = store.list('users');
+                arr.splice(arr.indexOf(u), 1); store.save(); render(root);
+              }
+            } }, '删除'))))
+          : h('div', { class: 'hint' }, '暂无申请账号')));
+  }
 
   drawList();
 }
