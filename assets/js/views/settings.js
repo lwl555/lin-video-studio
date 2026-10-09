@@ -1,7 +1,8 @@
 /* ============ 模型接入 & 设置 ============ */
-import { h, $, toast, modal, confirm, download } from '../ui.js';
+import { h, $, toast, modal, confirm, download, imgErr } from '../ui.js';
 import { store, auth, uid, ADMIN } from '../store.js';
 import { providers, PRESETS, TYPE_LABEL, testProvider } from '../models.js';
+import { usageReport, clearOldest, clearKind, clearAllMedia, compressAllImages, fmtMB, fmtKB } from '../storage.js';
 
 export function render(root) {
   const page = h('div', { class: 'page', style: { maxWidth: '920px' } });
@@ -102,6 +103,81 @@ export function render(root) {
     } }, '添加到我的模型'));
 
   page.append(h('div', { class: 'section-title' }, '自定义接入'), customForm);
+
+  /* ---- 存储管理 ---- */
+  function storageCard() {
+    const card = h('div', { class: 'provider-card' });
+    function draw() {
+      card.innerHTML = '';
+      const rep = usageReport(store.state);
+      const warn = rep.percent >= 85;
+
+      /* 用量条 */
+      const bar = h('div', { style: { height: '10px', background: 'var(--bg)', borderRadius: '6px', overflow: 'hidden', marginTop: '8px' } },
+        h('div', { style: { height: '100%', width: rep.percent + '%', borderRadius: '6px', background: warn ? 'var(--err)' : rep.percent >= 65 ? 'var(--warn)' : 'var(--brand)', transition: 'width .3s' } }));
+
+      /* 分类明细 */
+      const kinds = Object.entries(rep.byKind).sort((a, b) => b[1].bytes - a[1].bytes);
+      const kindRows = h('div', { style: { margin: '12px 0' } },
+        kinds.length ? kinds.map(([k, v]) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12.5px', padding: '4px 0' } },
+          h('span', { style: { width: '92px', color: 'var(--txt-2)' } }, k),
+          h('span', { class: 'tag' }, v.count + ' 个'),
+          h('div', { style: { flex: '1', height: '5px', background: 'var(--bg)', borderRadius: '4px', overflow: 'hidden' } },
+            h('div', { style: { height: '100%', width: Math.min(100, v.bytes / Math.max(1, rep.mediaBytes) * 100) + '%', background: 'var(--brand)', opacity: '.7' } })),
+          h('span', { style: { width: '70px', textAlign: 'right', color: 'var(--txt-3)' } }, fmtKB(v.bytes))))
+          : h('div', { class: 'hint' }, '目前没有占用空间的本地素材'));
+
+      /* 自动清理阈值 */
+      const at = store.state.settings?.autoCleanAt ?? 0.85;
+      const seg = h('div', { class: 'seg' },
+        [['0', '关闭'], ['0.75', '75%'], ['0.85', '85%'], ['0.92', '92%']].map(([v, label]) =>
+          h('button', {
+            class: String(at) === v ? 'active' : '', onclick: () => {
+              const cur = store.state.settings || {};
+              store.set({ settings: { ...cur, autoCleanAt: parseFloat(v) } });
+              draw(); toast(v === '0' ? '已关闭自动清理' : `空间用到 ${label} 时自动清理旧素材`, 'ok');
+            }
+          }, label)));
+
+      card.append(
+        h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px' } },
+          h('span', { style: { fontSize: '14px', fontWeight: '600' } }, '本机存储'),
+          h('span', { style: { fontSize: '12.5px', color: warn ? 'var(--err)' : 'var(--txt-2)' } },
+            `${fmtMB(rep.total)} / 5 MB（${rep.percent}%）`),
+          warn ? h('span', { class: 'badge', style: { background: '#FEF2F2', color: 'var(--err)' } }, '接近上限') : null),
+        bar,
+        kindRows,
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', margin: '14px 0 6px', flexWrap: 'wrap' } },
+          h('span', { style: { fontSize: '12.5px', color: 'var(--txt-2)' } }, '自动清理：'),
+          h('div', { style: { width: '190px' } }, seg),
+          h('span', { class: 'hint', style: { margin: '0' } }, '空间不足时，从最旧的素材开始清（只清图，保留文字记录）')),
+        h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap' } },
+          h('button', { class: 'btn-ghost', onclick: () => {
+            const n = clearOldest(store.state, 20);
+            if (!n) return toast('没有可清理的旧素材');
+            store.save(); draw(); toast(`已清理 ${n} 个旧素材`, 'ok');
+          } }, '清理最旧素材（留最新 20 个）'),
+          h('button', { class: 'btn-ghost', onclick: async e => {
+            e.currentTarget.disabled = true;
+            const tip = toast('开始压缩…');
+            const saved = await compressAllImages(store.state, s => { /* 静默 */ });
+            store.save(); draw();
+            e.currentTarget.disabled = false;
+            toast(saved > 0 ? `压缩完成，省下 ${fmtKB(saved)}` : '素材都已经足够小，无需压缩', 'ok', 3500);
+          } }, '一键压缩全部图片'),
+          h('button', { class: 'btn-ghost btn-danger', onclick: async () => {
+            if (!await confirm('清空全部本地素材（图片/视频缓存）？文字记录会完整保留，素材无法恢复。')) return;
+            const n = clearAllMedia(store.state);
+            store.save(); draw(); toast(`已清空 ${n} 个素材`, 'ok');
+          } }, '清空全部素材')),
+        h('div', { class: 'hint' },
+          '图片保存时自动压缩（长边 1280、JPEG）；空间不足时按上面设置的阈值自动清理最旧素材；被清理的位置会显示占位图，文字与记录都在。'));
+    }
+    draw();
+    return card;
+  }
+
+  page.append(h('div', { class: 'section-title' }, '存储管理'), storageCard());
 
   /* ---- 后端代理 ---- */
   const px = store.state.proxy;

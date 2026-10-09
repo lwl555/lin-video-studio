@@ -1,8 +1,20 @@
 /* ============ 通用 UI 组件 ============ */
 
+/* 素材被清理后的占位图 + img 兜底 */
+export const IMG_PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="#F2F3F5"/><text x="160" y="92" font-size="30" text-anchor="middle" fill="#C3C8D2">🖼️</text><text x="160" y="128" font-size="13" text-anchor="middle" fill="#AEB4BF" font-family="sans-serif">素材已清理（元数据保留）</text></svg>'
+);
+export function imgErr(e) {
+  const t = e.target;
+  if (t.dataset.pavoErr) return;
+  t.dataset.pavoErr = '1';
+  t.src = IMG_PLACEHOLDER;
+}
+
 /* DOM 构建助手 */
 export function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
+  if (String(tag).toLowerCase() === 'img') el.addEventListener('error', imgErr);
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;

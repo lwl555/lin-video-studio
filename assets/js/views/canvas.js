@@ -378,7 +378,13 @@ export function renderEditor(root, params) {
   async function uploadToNode(node, refresh) {
     const f = await pickFile('*/*');
     if (!f) return;
-    const url = await saveMedia(f);
+    let url;
+    try {
+      url = await saveMedia(f);
+    } catch (e) {
+      toast(e.message, 'err', 6000);
+      return;
+    }
     node.media = { url, type: f.type.startsWith('video') ? 'video' : f.type.startsWith('audio') ? 'audio' : 'image' };
     node.title = f.name.slice(0, 20);
     refresh(node); save();

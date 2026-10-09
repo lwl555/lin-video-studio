@@ -1,6 +1,7 @@
 /* ============ 应用入口：认证 + 路由 ============ */
 import { store, auth, ADMIN } from './store.js';
 import { $, $$, toast } from './ui.js';
+import { usageReport } from './storage.js';
 import * as Home from './views/home.js';
 import * as Canvas from './views/canvas.js';
 import * as ImageWs from './views/image.js';
@@ -117,6 +118,17 @@ function bootApp() {
 
   const n = store.list('providers').length;
   $('#credit-num').textContent = n ? `${n} 个模型` : 'BYOK';
+
+  /* 存储自动清理提醒 + 启动体检 */
+  window.addEventListener('pavo-autoclean', e => {
+    const { count = 0 } = e.detail || {};
+    if (count > 0) toast(`存储空间不足，已自动清理 ${count} 个最旧素材（策略可在「模型接入 → 存储管理」调整）`, '', 5200);
+  });
+  try {
+    const rep = usageReport(store.state);
+    if (rep.percent >= 85) setTimeout(() =>
+      toast(`本机存储已用 ${rep.percent}%，建议去「模型接入 → 存储管理」清理或压缩`, '', 5200), 1500);
+  } catch { /* ignore */ }
 
   /* 支持 #路由 链接（可分享） */
   const hash = location.hash.replace(/^#\/?/, '');

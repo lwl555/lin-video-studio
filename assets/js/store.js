@@ -1,4 +1,6 @@
 /* ============ 本地存储 & 全局状态 ============ */
+import { LS_LIMIT, MAX_INLINE_MEDIA, compressImage, shrinkUntilUnder, estimateBytes } from './storage.js';
+
 const KEY = 'pavo.v1';
 
 /* 内置管理员（唯一授权账号） */
@@ -22,7 +24,7 @@ const DEFAULT = {
     anon: '',                // 可选：匿名 key
     enabled: false
   },
-  settings: { style: '', ratio: '16:9', duration: 5 }
+  settings: { style: '', ratio: '16:9', duration: 5, autoCleanAt: 0.85 }  // 存储超此比例自动清理旧素材（0=关闭）
 };
 
 let S = load();
@@ -34,8 +36,42 @@ function load() {
     return Object.assign(structuredClone(DEFAULT), JSON.parse(raw));
   } catch { return structuredClone(DEFAULT); }
 }
+function notifyClean(count, freed) {
+  try {
+    window.dispatchEvent(new CustomEvent('pavo-autoclean', { detail: { count, freed } }));
+  } catch { /* ignore */ }
+}
+
 function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { console.warn('存储失败', e); }
+  const hardCap = Math.round(LS_LIMIT * 0.97);          // 写入失败线
+  const at = Number(S.settings?.autoCleanAt ?? 0.85);   // 预防线（0 = 关闭自动清理）
+
+  /* 预防：估算体积超过阈值时，先自动清理旧素材再写 */
+  if (at > 0 && estimateBytes(S) > hardCap * at) {
+    const n = shrinkUntilUnder(S, Math.round(hardCap * at));
+    if (n > 0) {
+      const freed = estimateBytes(S);
+      notifyClean(n, freed);
+    }
+  }
+
+  try {
+    localStorage.setItem(KEY, JSON.stringify(S));
+  } catch (e) {
+    /* 兜底：已经写失败了，强清到 60% 再试一次 */
+    try {
+      const n = shrinkUntilUnder(S, Math.round(LS_LIMIT * 0.6));
+      if (n > 0) {
+        localStorage.setItem(KEY, JSON.stringify(S));
+        notifyClean(n, estimateBytes(S));
+        return;
+      }
+      /* 一个都没有可清的了：找出最大单块再删 */
+      console.warn('存储失败：没有可自动清理的素材', e);
+    } catch (e2) {
+      console.warn('存储失败（清理后仍失败）', e2);
+    }
+  }
 }
 
 export const store = {
@@ -93,7 +129,7 @@ export const auth = {
   get isAdmin() { return S.session?.role === 'admin'; }
 };
 
-/* ---- 媒体存储：优先 Supabase Storage，否则本地 base64 ---- */
+/* ---- 媒体存储：优先 Supabase Storage，否则本地 base64（图片自动压缩） ---- */
 export async function saveMedia(file) {
   const p = S.proxy;
   if (p.enabled && p.url && p.anon) {
@@ -109,7 +145,14 @@ export async function saveMedia(file) {
       if (j?.url) return j.url;
     } catch (e) { console.warn('远程存储失败，回退本地', e); }
   }
-  return await fileToDataURL(file);
+
+  const isImg = (file.type || '').startsWith('image/');
+  if (!isImg && file.size > MAX_INLINE_MEDIA) {
+    throw new Error(`文件 ${(file.size / 1048576).toFixed(1)} MB 太大，本地存不下（视频/音频上限 ${MAX_INLINE_MEDIA / 1048576} MB）。部署后端代理后可存云端。`);
+  }
+  let dataUrl = await fileToDataURL(file);
+  if (isImg) dataUrl = await compressImage(dataUrl);
+  return dataUrl;
 }
 
 export function fileToDataURL(file) {
