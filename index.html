@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>林的视频工作台</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%238B5CF6'/><text x='50' y='68' font-size='56' text-anchor='middle' fill='white' font-family='sans-serif'>林</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ============ 登录 ============ -->
+<section id="auth-screen" class="auth">
+  <!-- 左：沉浸式视觉区 -->
+  <div class="auth-visual">
+    <div class="mesh"><i></i><i></i><i></i><i></i></div>
+    <div class="mesh-grain"></div>
+    <div class="visual-top">
+      <span class="mark">林</span>
+      <span class="brand-name">林的视频工作台</span>
+    </div>
+    <div class="visual-copy">
+      <p class="eyebrow">AI NATIVE · VIDEO STUDIO</p>
+      <h1 class="visual-h1">把一句话<br>做成一整部短剧。</h1>
+      <p class="visual-lead">剧本、角色、分镜、关键帧、成片——全部在同一块画布上完成，不用来回导素材。</p>
+    </div>
+    <ul class="visual-points">
+      <li><em>01</em><span>无限画布 · 节点式分镜，任意节点可拉分支</span></li>
+      <li><em>02</em><span>角色资产沉淀 · 跨镜头不崩脸</span></li>
+      <li><em>03</em><span>模型自己接 · Key 只留在本机</span></li>
+    </ul>
+    <div class="visual-foot">
+      <span class="dot-live"></span> 本地运行 · 无需服务器
+      <span class="vf-sep">/</span> © 2026
+    </div>
+  </div>
+
+  <!-- 右：表单区 -->
+  <div class="auth-side">
+    <div class="form-inner" id="form-login">
+      <p class="form-eyebrow">SECURE ACCESS</p>
+      <h2 class="form-h2">欢迎回来</h2>
+      <p class="form-sub">登录后继续未完成的创作</p>
+
+      <div class="f-field">
+        <input id="auth-account" type="text" placeholder=" " autocomplete="username" spellcheck="false">
+        <label for="auth-account">手机号</label>
+        <span class="f-line"></span>
+      </div>
+      <div class="f-field">
+        <input id="auth-pass" type="password" placeholder=" " autocomplete="current-password">
+        <label for="auth-pass">密码</label>
+        <span class="f-line"></span>
+        <button class="f-eye" id="auth-eye" type="button" aria-label="显示密码">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+
+      <div class="f-row">
+        <label class="f-check"><input type="checkbox" id="auth-remember" checked><span></span>记住这台设备</label>
+        <a class="f-link" id="auth-forgot">忘记密码？</a>
+      </div>
+
+      <div class="auth-error" id="auth-error"></div>
+      <button class="signin" id="auth-submit">
+        <span>进入工作台</span>
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+
+      <div class="f-alt">还没有账号 <a id="auth-go-register">申请授权</a></div>
+      <p class="f-note">仅限授权创作者进入 · 未授权账号会被拒绝</p>
+    </div>
+
+    <div class="form-inner hidden" id="form-register">
+      <p class="form-eyebrow">REQUEST ACCESS</p>
+      <h2 class="form-h2">申请账号</h2>
+      <p class="form-sub">提交后需管理员授权方可登录</p>
+      <div class="f-field">
+        <input id="reg-account" type="text" placeholder=" " autocomplete="username">
+        <label>手机号</label><span class="f-line"></span>
+      </div>
+      <div class="f-field">
+        <input id="reg-nick" type="text" placeholder=" ">
+        <label>昵称</label><span class="f-line"></span>
+      </div>
+      <div class="f-field">
+        <input id="reg-pass" type="password" placeholder=" " autocomplete="new-password">
+        <label>密码</label><span class="f-line"></span>
+      </div>
+      <div class="auth-error" id="reg-error"></div>
+      <button class="signin" id="reg-submit"><span>提交申请</span>
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+      <div class="f-alt">已有账号 <a id="auth-go-login">返回登录</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 主应用 ============ -->
+<div id="app" class="app hidden">
+
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="logo-mark">林</span>
+      <span class="logo-text">林的视频工作台</span>
+    </div>
+    <button id="btn-new" class="btn-new">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      开始创作
+    </button>
+    <nav class="sidebar-nav">
+      <a class="nav-item" data-route="inspire">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l2.4 6.3L21 9.3l-4.7 4 1.3 6.4L12 16.4 6.4 19.7l1.3-6.4L3 9.3l6.6-1z"/></svg>
+        <span>灵感</span>
+      </a>
+      <a class="nav-item" data-route="series">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 4v16M16 4v16"/></svg>
+        <span>短剧</span>
+      </a>
+      <a class="nav-item" data-route="canvas">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>画布</span>
+      </a>
+      <a class="nav-item" data-route="works">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <span>作品</span>
+      </a>
+      <a class="nav-item" data-route="assets">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7l-8-4-8 4 8 4 8-4z"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4"/></svg>
+        <span>资产</span>
+      </a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-bottom">
+      <a class="nav-item" data-route="settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 010-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 014 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
+        <span>模型接入</span>
+      </a>
+      <div class="user-chip">
+        <span class="avatar" id="user-avatar">林</span>
+        <div class="user-meta">
+          <span class="user-name" id="user-name">林</span>
+          <span class="user-plan" id="user-plan">管理员</span>
+        </div>
+        <button id="btn-logout" title="退出登录">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="btn-back" class="icon-btn hidden" title="返回">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="global-search" placeholder="搜索">
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="credit-pill" title="模型由你自行接入，创作不消耗平台积分">
+          <span class="credit-dot"></span>
+          <span>已接入</span>
+          <span class="credit-sep">|</span>
+          <span class="credit-up" id="credit-num">BYOK</span>
+        </div>
+        <button class="icon-btn" id="btn-notice" title="通知">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+        </button>
+        <span class="avatar avatar-sm" id="top-avatar">林</span>
+      </div>
+    </header>
+    <div id="view" class="view"></div>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="toast-root"></div>
+<div id="context-menu" class="context-menu hidden"></div>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
