@@ -84,16 +84,32 @@ export function renderEditor(root, params) {
     const w = el.offsetWidth || 300, hh = el.offsetHeight || 160;
     return side === 'out' ? { x: node.x + w, y: node.y + hh / 2 } : { x: node.x, y: node.y + hh / 2 };
   }
+  const SVGNS = 'http://www.w3.org/2000/svg';
   function drawEdges() {
     edgeLayer.innerHTML = '';
+    /* 连线箭头（Pavo 风格） */
+    const defs = document.createElementNS(SVGNS, 'defs');
+    const mk = document.createElementNS(SVGNS, 'marker');
+    mk.setAttribute('id', 'earrow');
+    mk.setAttribute('viewBox', '0 0 10 10');
+    mk.setAttribute('refX', '9'); mk.setAttribute('refY', '5');
+    mk.setAttribute('markerWidth', '6'); mk.setAttribute('markerHeight', '6');
+    mk.setAttribute('orient', 'auto-start-reverse');
+    const tip = document.createElementNS(SVGNS, 'path');
+    tip.setAttribute('d', 'M0,0 L10,5 L0,10 z');
+    tip.setAttribute('fill', '#B6BAC4');
+    mk.append(tip); defs.append(mk); edgeLayer.append(defs);
+
     for (const e of proj.edges) {
       const a = proj.nodes.find(n => n.id === e.from), b = proj.nodes.find(n => n.id === e.to);
       if (!a || !b) continue;
       const p1 = portPos(a, 'out'), p2 = portPos(b, 'in'); if (!p1 || !p2) continue;
       const dx = Math.max(40, Math.abs(p2.x - p1.x) * 0.45);
-      const d = `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x},${p2.y}`;
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('class', 'edge'); path.setAttribute('d', d);
+      const d = `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x - 2},${p2.y}`;
+      const path = document.createElementNS(SVGNS, 'path');
+      path.setAttribute('class', 'edge');
+      path.setAttribute('d', d);
+      path.setAttribute('marker-end', 'url(#earrow)');
       edgeLayer.append(path);
     }
   }

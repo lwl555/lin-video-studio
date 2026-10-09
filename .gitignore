@@ -1,4 +1,5 @@
 _ref/
+_tmp/
 node_modules/
 .DS_Store
 *.log
