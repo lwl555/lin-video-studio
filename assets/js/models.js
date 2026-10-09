@@ -119,8 +119,12 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
   const base = norm(p);
   const submitPath = p.submitPath || '/video/generations';
   const queryPath = p.queryPath || '/video/status';
-  const body = { model: p.model, prompt, duration, aspect_ratio: ratio };
+  const body = { model: p.model, prompt };
   if (images.length) body.images = images;
+  /* 实测 Agnes 拒绝 duration 等字段，默认不注入；时长/画幅写进 prompt 即可。需要额外参数时在模型接入里填 extra（JSON） */
+  if (p.extra) {
+    try { Object.assign(body, typeof p.extra === 'string' ? JSON.parse(p.extra) : p.extra); } catch { /* 忽略 */ }
+  }
 
   onProgress?.('提交任务…');
   const res = await request(base + submitPath, { headers: authHeaders(p.apiKey), body });
