@@ -19,7 +19,7 @@ export const PRESETS = [
   { key: 'custom', name: '自定义', type: 'text', baseUrl: '', model: '' }
 ];
 
-export const TYPE_LABEL = { text: '文本/剧情', image: '图像', video: '视频' };
+export const TYPE_LABEL = { text: '文本/剧情', image: '图像', video: '视频', audio: '音频/TTS（预留）' };
 
 export const providers = {
   all: () => store.list('providers'),

@@ -2,6 +2,8 @@
 import { h, $, $$, toast, ctxMenu, modal, confirm, pickFile, modelChip, timeAgo, download } from '../ui.js';
 import { store, uid, saveMedia } from '../store.js';
 import { providers, chat, genImage, genVideo } from '../models.js';
+import { openDirector } from '../director.js';
+import { concatVideos } from '../media.js';
 import { go } from '../app.js';
 
 const NODE_META = {
@@ -253,29 +255,80 @@ export function renderEditor(root, params) {
     if (node.type === 'audio' || node.type === 'upload') {
       actions.append(h('button', { class: 'node-btn primary', onclick: () => uploadToNode(node, refresh) }, '上传文件'));
     }
+    if (node.type === 'audio') {
+      actions.append(h('button', {
+        class: 'node-btn',
+        onclick: () => toast('配音 / 音色克隆 / 音效生成：接口已预留，接入 TTS 模型后开放', 'ok', 4200)
+      }, '配音（开发中）'));
+    }
     actions.append(h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
   }
 
   function renderMerge(node, refresh) {
-    const ups = upstream(node).filter(n => n.media?.url);
-    return h('div', { class: 'node-try' },
+    const ups = upstream(node).filter(n => n.media?.url && n.media.type === 'video');
+    const box = h('div', { class: 'node-try' },
       h('div', { class: 'try-h' }, `待合成片段（${ups.length}）`),
-      ...ups.map((u, i) => h('div', { class: 'try-chip' }, `${i + 1}. ${u.title || '片段'}`)),
-      ups.length ? h('button', { class: 'node-btn primary', style: { marginTop: '8px' }, onclick: async () => {
-        node.content = `已将 ${ups.length} 个片段加入合成队列。\n合成需要在后端（Supabase Edge Function + ffmpeg）执行，当前为本地模式：可逐个下载后自行拼接。`;
-        node.media = null; refresh(node);
-      } }, '开始合成') : h('div', { class: 'try-h' }, '把视频节点连到本节点即可合成')
+      ...ups.map((u, i) => h('div', { class: 'try-chip' }, `${i + 1}. ${u.title || '片段'}`)));
+
+    if (!ups.length) {
+      box.append(h('div', { class: 'try-h' }, '把视频节点连到本节点即可合成'));
+      return box;
+    }
+
+    const xf = h('input', { type: 'checkbox' });
+    xf.id = 'mg-xf-' + node.id;
+    const btn = h('button', { class: 'node-btn primary', style: { marginTop: '8px' }, onclick: async e => {
+      e.currentTarget.disabled = true;
+      node.error = ''; node.status = '准备合成引擎…'; refresh(node);
+      try {
+        const r = await concatVideos(ups.map(u => u.media.url), {
+          transition: xf.checked ? 0.5 : 0,
+          onProgress: s => { node.status = s; refresh(node); }
+        });
+        node.media = { url: r.url, type: 'video' };
+        node.content = `已合成 ${ups.length} 个片段 · ${(r.size / 1048576).toFixed(1)} MB\n（浏览器内完成，请及时下载保存）`;
+        store.add('works', { id: uid('w'), title: (node.title || '成片'), type: 'video', url: r.url, createdAt: Date.now() });
+        node.status = ''; toast('合成完成', 'ok');
+      } catch (err) {
+        node.status = ''; node.error = err.message;
+        toast('合成失败：' + err.message, 'err', 6000);
+      }
+      e.currentTarget.disabled = false;
+      refresh(node); save();
+    } }, '一键合成成片');
+
+    box.append(
+      h('label', { class: 'f-check', style: { margin: '8px 0 2px', fontSize: '11.5px' } }, xf, h('span'), '加转场（淡入淡出 0.5s，需重编码）'),
+      btn,
+      h('div', { class: 'try-h' }, '首次需下载约 30MB 编码内核，之后本机缓存')
     );
+    return box;
   }
 
   const SHOTS = ['中景 平视 静止', '近景 俯拍 推镜', '全景 平视 横移', '特写 仰拍 跟拍', '中景 侧拍 环绕', '远景 航拍 拉远'];
   function renderDirector(node) {
     return h('div', {},
-      h('div', { class: 'try-h' }, '机位预设'),
+      h('div', { class: 'try-h' }, '3D 导演台'),
+      h('button', {
+        class: 'node-btn primary', style: { width: '100%', justifyContent: 'center', marginBottom: '10px' },
+        onclick: async e => {
+          e.currentTarget.disabled = true; e.currentTarget.textContent = '加载 3D 引擎…';
+          try {
+            await openDirector({
+              onCapture: url => {
+                node.media = { url, type: 'image' };
+                node.title = node.title || '机位图';
+                refresh(node); save();
+              }
+            });
+          } catch (err) { toast('打开失败：' + err.message, 'err', 4500); }
+          e.currentTarget.disabled = false; e.currentTarget.textContent = '打开导演台（摆位 · 机位 · 截图）';
+        }
+      }, '打开导演台（摆位 · 机位 · 截图）'),
       h('div', { class: 'node-try' }, ...SHOTS.map(s => h('button', {
         class: 'try-chip', onclick: () => { node.prompt = (node.prompt ? node.prompt + '，' : '') + s; refresh(node); }
       }, s))),
-      h('div', { class: 'try-h' }, '生成前先选定机位，构图更可控')
+      h('div', { class: 'try-h' }, '截好的机位图可存为资产，或直接当下游视频节点的参考图')
     );
   }
 

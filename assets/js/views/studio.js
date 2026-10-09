@@ -1,5 +1,5 @@
 /* ============ 剧情短片 · 六阶段流水线 ============ */
-import { h, $, toast, download } from '../ui.js';
+import { h, $, toast, download, pickFile } from '../ui.js';
 import { store, uid } from '../store.js';
 import { providers, chat, genImage, genVideo } from '../models.js';
 import { go } from '../app.js';
@@ -247,15 +247,55 @@ function renderProject(root, proj) {
         } }, s.video ? '重生成' : '生成片段')))));
 
     const all = proj.storyboard.filter(s => s.video);
+    const statusLine = h('div', { class: 'hint', style: { marginTop: '10px' } }, '');
+    const resultBox = h('div', {});
+    const xf = h('input', { type: 'checkbox' });
+    let bgmUrl = null;
+    const bgmSlot = h('div', { class: 'ref-slot', onclick: async () => {
+      const f = await pickFile('audio/*'); if (!f) return;
+      bgmUrl = URL.createObjectURL(f);
+      bgmSlot.innerHTML = '';
+      bgmSlot.append(h('span', { style: { fontSize: '11px', padding: '4px' } }, '🎵 ' + f.name.slice(0, 12)));
+    } }, h('span', { style: { fontSize: '16px' } }, '＋'), h('span', {}, '背景音'));
+
     content.append(h('div', { class: 'card', style: { padding: '16px', marginTop: '14px' } },
       h('div', { class: 'asset-name' }, `合成成片（${all.length}/${proj.storyboard.length} 个片段就绪）`),
-      h('div', { class: 'hint' }, '本地模式：请下载各片段后用剪辑软件拼接；接入 Supabase 后端（ffmpeg）后可一键合成 MP4。'),
-      h('div', { style: { display: 'flex', gap: '10px', marginTop: '10px' } },
-        h('button', { class: 'btn-primary', onclick: () => all.length ? download(all[0], 'shot1.mp4') : toast('还没有片段', 'err') }, '下载首个片段'),
+      h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' } },
+        h('label', { class: 'f-check', style: { fontSize: '12.5px' } }, xf, h('span'), '加转场（淡入淡出 0.5s）'),
+        bgmSlot,
+        h('button', { class: 'btn-primary', onclick: async e => {
+          if (!all.length) return toast('还没有视频片段', 'err');
+          e.currentTarget.disabled = true;
+          try {
+            const { concatVideos } = await import('../media.js');
+            const r = await concatVideos(all.map(s => s.video), {
+              transition: xf.checked ? 0.5 : 0,
+              audioUrl: bgmUrl,
+              onProgress: s => { statusLine.textContent = s; }
+            });
+            statusLine.textContent = '';
+            resultBox.innerHTML = '';
+            resultBox.append(
+              h('video', { src: r.url, controls: true, style: { width: '100%', borderRadius: '10px', marginTop: '10px', maxHeight: '320px' } }),
+              h('div', { style: { display: 'flex', gap: '10px', marginTop: '10px' } },
+                h('button', { class: 'btn-primary', onclick: () => download(r.url, (proj.req?.title || '成片') + '.mp4') }, `下载成片（${(r.size / 1048576).toFixed(1)} MB）`),
+                h('button', { class: 'btn-ghost', onclick: () => {
+                  store.add('works', { id: uid('w'), title: (proj.req?.title || '成片'), type: 'video', url: r.url, createdAt: Date.now() });
+                  toast('已存入作品库', 'ok');
+                } }, '存入作品')));
+            toast('合成完成', 'ok');
+          } catch (err) {
+            statusLine.textContent = '';
+            toast('合成失败：' + err.message, 'err', 6000);
+          }
+          e.currentTarget.disabled = false;
+        } }, '一键合成 MP4'),
         h('button', { class: 'btn-ghost', onclick: () => {
           const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });
           download(URL.createObjectURL(blob), (proj.req?.title || '短片') + '.json');
-        } }, '导出项目 JSON'))));
+        } }, '导出项目 JSON')),
+      statusLine, resultBox,
+      h('div', { class: 'hint' }, '合成在浏览器里完成（ffmpeg.wasm），首次要下载约 30MB 编码内核，之后本机缓存。成片是临时链接，记得及时下载。')));
   }
 
   page.append(

@@ -422,6 +422,39 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .toast.ok{border-color:rgba(16,185,129,.35);color:#047857}
 @keyframes tin{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 
+/* ---------- 3D 导演台 ---------- */
+.d3-root{position:fixed;inset:0;z-index:700;background:#fff;display:flex;flex-direction:column}
+.d3-head{height:54px;flex-shrink:0;border-bottom:1px solid var(--line);display:flex;align-items:center;
+  gap:14px;padding:0 16px}
+.d3-title{font-size:15px;font-weight:600}
+.d3-sub{font-size:12px;color:var(--txt-3);flex:1}
+.d3-body{flex:1;display:grid;grid-template-columns:272px 1fr 252px;min-height:0}
+.d3-side{padding:14px;overflow-y:auto;background:#fff}
+.d3-side:first-child{border-right:1px solid var(--line)}
+.d3-side:last-child{border-left:1px solid var(--line)}
+.d3-stage{position:relative;overflow:hidden;background:#F5F6F8;min-width:0}
+.d3-h{font-size:11.5px;color:var(--txt-3);margin-bottom:8px;font-weight:600;letter-spacing:.02em}
+.d3-role{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;
+  margin-bottom:4px;border:1px solid transparent}
+.d3-role:hover{background:var(--bg)}
+.d3-role.active{background:var(--brand-soft);border-color:rgba(23,184,166,.35)}
+.d3-role-n{width:18px;height:18px;border-radius:50%;background:var(--bg);font-size:11px;display:flex;
+  align-items:center;justify-content:center;color:var(--txt-2);flex-shrink:0}
+.d3-role-name{flex:1;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.d3-poses{display:flex;flex-wrap:wrap;gap:5px}
+.d3-slider{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--txt-2);margin-bottom:8px}
+.d3-slider input{flex:1;accent-color:var(--brand);min-width:0}
+.d3-val{width:30px;text-align:right;color:var(--txt-3);font-size:11px}
+.d3-presets{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.d3-preset{display:flex;align-items:center;gap:6px;padding:5px 7px;border-radius:8px;background:#fff;
+  border:1px solid var(--line);font-size:11.5px;color:var(--txt-2);text-align:left;transition:.15s}
+.d3-preset:hover{border-color:var(--brand);color:var(--brand-2)}
+.d3-preset-n{font-size:10px;color:var(--txt-3)}
+.d3-shots{display:flex;flex-direction:column;gap:8px}
+.d3-shot{border:1px solid var(--line);border-radius:8px;padding:6px}
+.d3-shot img{width:100%;border-radius:6px;display:block;background:var(--bg)}
+.d3-shot-label{font-size:11px;color:var(--txt-3);margin-top:4px}
+
 @media (max-width:1100px){
   .auth{grid-template-columns:1fr}
   .auth-visual{display:none}

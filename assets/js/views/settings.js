@@ -9,7 +9,8 @@ export function render(root) {
 
   page.append(h('div', {},
     h('div', { class: 'page-title' }, '模型接入'),
-    h('div', { class: 'page-sub' }, '平台不自带模型 —— 填你自己的 Base URL 和 API Key，全部只保存在这台电脑的浏览器里')));
+    h('div', { class: 'page-sub' }, '平台不自带模型 —— 填你自己的 Base URL 和 API Key，全部只保存在这台电脑的浏览器里'),
+    h('div', { class: 'hint' }, '音频 / 音色克隆 / TTS 接口已预留，暂不开放')));
 
   /* ---- 预设 ---- */
   const presetRow = h('div', { class: 'preset-row' });
