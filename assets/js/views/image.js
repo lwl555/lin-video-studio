@@ -1,7 +1,7 @@
 /* ============ 图片生成工作区 ============ */
 import { h, $, toast, pickFile, modelSelect, download } from '../ui.js';
 import { store, uid, saveMedia } from '../store.js';
-import { providers, genImage, PRESETS } from '../models.js';
+import { providers, genImage } from '../models.js';
 import { go } from '../app.js';
 
 const STYLES = ['写实电影感', '2D 动漫', '3D 渲染', '国风水墨', '美式漫画', '像素风', '儿童插画', '赛博朋克'];
