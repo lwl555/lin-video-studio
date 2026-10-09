@@ -73,8 +73,71 @@ export function renderEditor(root, params) {
     const r = wrap.getBoundingClientRect();
     return { x: (clientX - r.left - vp.x) / vp.zoom, y: (clientY - r.top - vp.y) / vp.zoom };
   };
-  const applyVp = () => { stage.style.transform = `translate(${vp.x}px,${vp.y}px) scale(${vp.zoom})`; zoomLabel.textContent = Math.round(vp.zoom * 100) + '%'; };
+  const applyVp = () => {
+    stage.style.transform = `translate(${vp.x}px,${vp.y}px) scale(${vp.zoom})`;
+    if (zoomLabel) zoomLabel.textContent = Math.round(vp.zoom * 100) + '%';
+    scheduleMinimap();
+  };
   const save = () => { proj.updatedAt = Date.now(); store.save(); };
+
+  /* ---- 小地图（鸟瞰导航，Pavo 同款） ---- */
+  let mmVisible = true, mmTransform = null, mmScheduled = false;
+  function scheduleMinimap() {
+    if (mmScheduled) return;
+    mmScheduled = true;
+    requestAnimationFrame(() => { mmScheduled = false; if (mmVisible) drawMinimap(); });
+  }
+  function drawMinimap() {
+    const c = mmCanvas; if (!c) return;
+    const ctx = c.getContext('2d');
+    const W = 224, H = 150, dpr = Math.min(2, devicePixelRatio || 1);
+    if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; c.style.width = W + 'px'; c.style.height = H + 'px'; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const vw = wrap.clientWidth / vp.zoom, vh = wrap.clientHeight / vp.zoom;
+    const view = { x: -vp.x / vp.zoom, y: -vp.y / vp.zoom, w: vw, h: vh };
+    let minX = view.x, minY = view.y, maxX = view.x + view.w, maxY = view.y + view.h;
+    const sizeOf = n => {
+      const el = nodeEls.get(n.id);
+      return [el?.offsetWidth || 300, el?.offsetHeight || 160];
+    };
+    for (const n of proj.nodes) {
+      const [w, hh] = sizeOf(n);
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + w); maxY = Math.max(maxY, n.y + hh);
+    }
+    const pad = 24; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const s = Math.min(W / (maxX - minX), H / (maxY - minY));
+    const ox = (W - (maxX - minX) * s) / 2, oy = (H - (maxY - minY) * s) / 2;
+    mmTransform = { s, ox, oy, minX, minY };
+    const toMM = (x, y) => [ox + (x - minX) * s, oy + (y - minY) * s];
+
+    /* 连线 */
+    ctx.strokeStyle = '#D9DCE1'; ctx.lineWidth = 1;
+    for (const e of proj.edges) {
+      const a = proj.nodes.find(n => n.id === e.from), b = proj.nodes.find(n => n.id === e.to);
+      if (!a || !b) continue;
+      const [aw, ah] = sizeOf(a), [bw, bh] = sizeOf(b);
+      const [x1, y1] = toMM(a.x + aw / 2, a.y + ah / 2);
+      const [x2, y2] = toMM(b.x + bw / 2, b.y + bh / 2);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    /* 节点 */
+    for (const n of proj.nodes) {
+      const [w, hh] = sizeOf(n);
+      const [x, y] = toMM(n.x, n.y);
+      ctx.fillStyle = n.id === selected?.id ? '#17B8A6'
+        : n.status ? '#F5C26B'
+        : n.media?.url ? '#AFDED7'
+        : n.type === 'text' ? '#D9DEE7' : '#E6E8EC';
+      ctx.fillRect(x, y, Math.max(5, w * s), Math.max(4, hh * s));
+    }
+    /* 当前视口框 */
+    const [vx, vy] = toMM(view.x, view.y);
+    ctx.strokeStyle = '#17B8A6'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(vx, vy, view.w * s, view.h * s);
+  }
 
   /* ---- 边 ---- */
   const edgeLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -160,7 +223,7 @@ export function renderEditor(root, params) {
         node.x = ox + (ev.clientX - sx) / vp.zoom;
         node.y = oy + (ev.clientY - sy) / vp.zoom;
         el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
-        drawEdges();
+        drawEdges(); scheduleMinimap();
       };
       const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(); };
       document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
@@ -463,6 +526,7 @@ export function renderEditor(root, params) {
       el.querySelector('.node-model').textContent = modelChip(only.type === 'image' ? 'image' : only.type === 'video' ? 'video' : 'text');
     }
     drawEdges();
+    scheduleMinimap();
   }
 
   /* ---- 画布交互 ---- */
@@ -504,7 +568,37 @@ export function renderEditor(root, params) {
 
   /* ---- 顶栏 / 工具栏 ---- */
   const nameInput = h('input', { value: proj.name, oninput: e => { proj.name = e.target.value; save(); } });
-  const zoomLabel = h('div', { class: 'zoom-label' }, '100%');
+  const zoomLabel = h('button', { class: 'zoom-label', title: '点击回到 100%', onclick: () => { vp.zoom = 1; applyVp(); } }, '100%');
+
+  /* 小地图卡片 */
+  const mmCanvas = h('canvas', { class: 'mm-canvas' });
+  const mmWrap = h('div', { class: 'mm-wrap' }, mmCanvas);
+  mmCanvas.addEventListener('pointerdown', e => {
+    if (!mmTransform) return;
+    e.preventDefault();
+    const jump = ev => {
+      const r = mmCanvas.getBoundingClientRect();
+      const wx = mmTransform.minX + (ev.clientX - r.left - mmTransform.ox) / mmTransform.s;
+      const wy = mmTransform.minY + (ev.clientY - r.top - mmTransform.oy) / mmTransform.s;
+      vp.x = wrap.clientWidth / 2 - wx * vp.zoom;
+      vp.y = wrap.clientHeight / 2 - wy * vp.zoom;
+      applyVp();
+    };
+    jump(e);
+    const up = () => { document.removeEventListener('pointermove', jump); document.removeEventListener('pointerup', up); save(); };
+    document.addEventListener('pointermove', jump);
+    document.addEventListener('pointerup', up);
+  });
+
+  const mmToggle = h('button', {
+    class: 'tb-btn active', title: '小地图',
+    onclick: () => {
+      mmVisible = !mmVisible;
+      mmToggle.classList.toggle('active', mmVisible);
+      mmWrap.classList.toggle('hidden', !mmVisible);
+      if (mmVisible) scheduleMinimap();
+    }
+  }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>' }));
 
   const toolbar = h('div', { class: 'canvas-toolbar' },
     h('button', { class: 'tb-add', onclick: e => {
@@ -523,14 +617,15 @@ export function renderEditor(root, params) {
       ]);
     } }, '＋ 添加节点'),
     h('div', { class: 'tb-div' }),
+    mmToggle,
+    h('button', { class: 'tb-btn', title: '一键整理', onclick: arrange }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.8L20 19M8.2 16.2L20 5"/></svg>' })),
+    h('div', { class: 'tb-div' }),
     h('button', { class: 'tb-btn', title: '缩小', onclick: () => { vp.zoom = Math.max(.25, vp.zoom * .85); applyVp(); } },
       h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>' })),
     zoomLabel,
     h('button', { class: 'tb-btn', title: '放大', onclick: () => { vp.zoom = Math.min(2.5, vp.zoom * 1.15); applyVp(); } },
       h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' })),
-    h('button', { class: 'tb-btn', title: '适应内容', onclick: fit }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8V5a2 2 0 012-2h3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M21 16v3a2 2 0 01-2 2h-3"/></svg>' })),
-    h('div', { class: 'tb-div' }),
-    h('button', { class: 'tb-btn', title: '一键整理', onclick: arrange }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' })),
+    h('button', { class: 'tb-btn', title: '总览全部内容', onclick: fit }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' })),
     h('button', { class: 'tb-btn', title: '导出项目 JSON', onclick: exportJSON }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>' }))
   );
 
@@ -565,7 +660,7 @@ export function renderEditor(root, params) {
     download(URL.createObjectURL(blob), proj.name + '.json');
   }
 
-  root.append(wrap, toolbar, topbar);
+  root.append(wrap, toolbar, topbar, mmWrap);
   refresh();
   applyVp();
   requestAnimationFrame(() => { refresh(); applyVp(); });
