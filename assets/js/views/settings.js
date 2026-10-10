@@ -1,8 +1,8 @@
-/* ============ 模型接入 & 设置 ============ */
+/* ============ 设置 ============ */
 import { h, $, toast, modal, confirm, download, imgErr } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, auth, uid, ADMIN } from '../store.js';
-import { providers, PRESETS, TYPE_LABEL, testProvider } from '../models.js';
+import { testBackend } from '../models.js';
 import { usageReport, clearOldest, clearKind, clearAllMedia, compressAllImages, fmtMB, fmtKB } from '../storage.js';
 
 export function render(root) {
@@ -10,121 +10,56 @@ export function render(root) {
   root.append(page);
 
   page.append(h('div', {},
-    h('div', { class: 'page-title' }, '模型接入'),
-    h('div', { class: 'page-sub' }, '平台不自带模型 —— 填你自己的 Base URL 和 API Key，全部只保存在这台电脑的浏览器里'),
-    h('div', { class: 'hint' }, '音频 / 音色克隆 / TTS 接口已预留，暂不开放')));
+    h('div', { class: 'page-title' }, '设置'),
+    h('div', { class: 'page-sub' }, 'AI 后台由平台统一接入并维护，你无需、也无法填写任何密钥或地址')));
 
-  /* ---- 预设 ---- */
-  const presetRow = h('div', { class: 'preset-row' });
-  for (const p of PRESETS) {
-    presetRow.append(h('button', { class: 'chip', onclick: () => quickAdd(p) },
-      `${TYPE_LABEL[p.type]} · ${p.name}`));
-  }
-  page.append(h('div', { class: 'section-title' }, '快速添加'), presetRow);
-
-  /* ---- 已接入 ---- */
-  const listBox = h('div', {});
-  page.append(h('div', { class: 'section-title' }, '已接入的模型'), listBox);
-
-  function drawList() {
-    listBox.innerHTML = '';
-    const all = providers.all();
-    if (!all.length) {
-      listBox.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('plug', 40) }),
-        '还没有接入任何模型', h('div', { class: 'hint' }, '点上面的预设，或点下面「自定义接入」')));
-    }
-    for (const p of all) {
-      const keyInput = h('input', { class: 'form-input', type: 'password', value: p.apiKey || '', placeholder: 'sk-...' });
-      /* 测试结果就地显示，不依赖会消失的 toast */
-      const testLine = h('div', { style: { display: 'none', fontSize: '12.5px', margin: '10px 0 0', padding: '9px 12px', borderRadius: '8px', lineHeight: '1.6', wordBreak: 'break-all' } });
-      const card = h('div', { class: 'provider-card' },
-        h('div', { class: 'provider-head' },
-          h('div', { class: 'provider-name' }, h('span', { class: 'status-dot' + (p.enabled !== false ? ' on' : '') }), p.name,
-            h('span', { class: 'tag' }, TYPE_LABEL[p.type])),
-          h('button', { class: 'node-btn', onclick: async e => {
-            const btn = e.currentTarget;
-            btn.disabled = true; btn.textContent = '测试中…';
-            testLine.style.display = 'none';
-            try {
-              /* 闭包里的 p 是渲染时的旧快照，必须从 store 取用户刚填的最新值 */
-              const r = await testProvider(providers.get(p.id) || p);
-              testLine.style.display = 'block';
-              testLine.style.background = r.ok ? '#E9F9F6' : '#FEF2F2';
-              testLine.style.color = r.ok ? '#0E7C6E' : 'var(--err)';
-              testLine.textContent = (r.ok ? '✓ ' : '✗ ') + r.msg;
-              toast(r.ok ? '连接正常' : '连接失败', r.ok ? 'ok' : 'err', 3500);
-            } catch (err) {
-              testLine.style.display = 'block';
-              testLine.style.background = '#FEF2F2';
-              testLine.style.color = 'var(--err)';
-              testLine.textContent = '✗ 测试异常：' + String(err?.message || err);
-            } finally {
-              btn.disabled = false; btn.textContent = '测试';
-            }
-          } }, '测试'),
-          h('button', { class: 'node-btn', onclick: () => {
-            const cur = providers.get(p.id) || p;
-            providers.update(p.id, { enabled: cur.enabled === false });
-            drawList();
-          } }, p.enabled === false ? '启用' : '停用'),
-          h('button', { class: 'node-btn', onclick: async () => {
-            if (await confirm(`删除「${p.name}」？`)) { providers.remove(p.id); drawList(); }
-          } }, '删除')),
-        testLine,
-        h('div', { class: 'form-row' },
-          h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL'),
-            h('input', { class: 'form-input', value: p.baseUrl || '', placeholder: 'https://api.example.com/v1',
-              oninput: e => providers.update(p.id, { baseUrl: e.target.value }) })),
-          h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型名'),
-            h('input', { class: 'form-input', value: p.model || '', placeholder: 'model-name',
-              oninput: e => providers.update(p.id, { model: e.target.value }) }))),
-        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'API Key'),
-          h('div', { class: 'input-wrap' }, keyInput,
-            h('button', { class: 'eye-btn', onclick: () => { keyInput.type = keyInput.type === 'password' ? 'text' : 'password'; } }, '显示')),
-          h('div', { class: 'hint' }, 'Key 保存在本机 localStorage，不会上传到任何服务器（除非你开了下面的后端代理）。')));
-
-      if (p.type === 'video') {
-        card.append(h('div', { class: 'form-row' },
-          h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '提交路径'),
-            h('input', { class: 'form-input', value: p.submitPath || '/video/generations',
-              oninput: e => providers.update(p.id, { submitPath: e.target.value }) })),
-          h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '查询路径'),
-            h('input', { class: 'form-input', value: p.queryPath || '/video/status',
-              oninput: e => providers.update(p.id, { queryPath: e.target.value }) }))));
-      }
-      keyInput.addEventListener('input', () => providers.update(p.id, { apiKey: keyInput.value }));
-      listBox.append(card);
+  /* ---- AI 后台服务（唯一可操作项：开 / 关） ---- */
+  const on = () => { const b = store.state.backend; return b ? b.enabled !== false : true; };
+  const statusLine = h('div', { class: 'backend-status' });
+  function drawStatus() {
+    statusLine.innerHTML = '';
+    if (on()) {
+      statusLine.className = 'backend-status ok';
+      statusLine.append(h('span', { class: 'dot' }), '已启用 · Agnes AI（文本 / 图像 / 视频）已就绪');
+    } else {
+      statusLine.className = 'backend-status off';
+      statusLine.append(h('span', { class: 'dot' }), '已关闭 — 所有 AI 生成功能将不可用');
     }
   }
+  const swInput = h('input', { type: 'checkbox', checked: on() });
+  swInput.addEventListener('change', e => { store.set({ backend: { enabled: e.target.checked } }); drawStatus(); });
+  const sw = h('label', { class: 'switch' }, swInput, h('span', { class: 'slider' }));
 
-  function quickAdd(preset) {
-    if (providers.all().some(x => x.name === preset.name && x.baseUrl === preset.baseUrl)) return toast('这个模型已经加过了', 'err');
-    providers.add({ name: preset.name, type: preset.type, baseUrl: preset.baseUrl, model: preset.model, apiKey: '' });
-    drawList(); toast('已添加，填入 API Key 即可用', 'ok');
-  }
+  const testLine = h('div', { style: { display: 'none', fontSize: '12.5px', margin: '10px 0 0', padding: '9px 12px', borderRadius: '8px', lineHeight: '1.6', wordBreak: 'break-all' } });
 
-  const customForm = h('div', { class: 'provider-card' },
-    h('div', { class: 'provider-name', style: { marginBottom: '12px' } }, '自定义接入'),
-    h('div', { class: 'form-row-3' },
-      (() => { const i = h('input', { class: 'form-input', placeholder: '名称，如 我的中转' }); i.id = 'cf-name'; return h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '名称'), i); })(),
-      (() => {
-        const s = h('select', { class: 'form-select' }); s.id = 'cf-type';
-        Object.entries(TYPE_LABEL).forEach(([k, v]) => s.append(h('option', { value: k }, v)));
-        return h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '类型'), s);
-      })(),
-      (() => { const i = h('input', { class: 'form-input', placeholder: 'model-name' }); i.id = 'cf-model'; return h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型名'), i); })()),
-    (() => { const i = h('input', { class: 'form-input', placeholder: 'https://api.example.com/v1' }); i.id = 'cf-url'; return h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL（OpenAI 兼容格式）'), i); })(),
-    (() => { const i = h('input', { class: 'form-input', type: 'password', placeholder: 'sk-...' }); i.id = 'cf-key'; return h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'API Key'), i); })(),
-    h('button', { class: 'btn-primary', onclick: () => {
-      const name = $('#cf-name').value.trim(), type = $('#cf-type').value, model = $('#cf-model').value.trim();
-      const baseUrl = $('#cf-url').value.trim(), apiKey = $('#cf-key').value;
-      if (!name || !baseUrl || !model) return toast('名称 / URL / 模型名都要填', 'err');
-      providers.add({ name, type, model, baseUrl, apiKey });
-      drawList(); toast('已添加', 'ok');
-      ['cf-name', 'cf-model', 'cf-url', 'cf-key'].forEach(id => $('#' + id).value = '');
-    } }, '添加到我的模型'));
+  const backendCard = h('div', { class: 'provider-card' },
+    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' } },
+      h('div', {},
+        h('div', { style: { fontSize: '14px', fontWeight: '600' } }, 'AI 后台服务'),
+        h('div', { class: 'hint', style: { margin: '4px 0 0' } }, '平台已为你接好模型通道，打开开关即可使用，不用填任何东西。')),
+      sw),
+    statusLine,
+    h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '14px' } },
+      h('button', { class: 'btn-ghost', onclick: async e => {
+        const btn = e.currentTarget; btn.disabled = true; btn.textContent = '测试中…';
+        testLine.style.display = 'none';
+        try {
+          const r = await testBackend();
+          testLine.style.display = 'block';
+          testLine.style.background = r.ok ? '#E9F9F6' : '#FEF2F2';
+          testLine.style.color = r.ok ? '#0E7C6E' : 'var(--err)';
+          testLine.textContent = (r.ok ? '✓ ' : '✗ ') + r.msg;
+        } catch (err) {
+          testLine.style.display = 'block';
+          testLine.style.background = '#FEF2F2';
+          testLine.style.color = 'var(--err)';
+          testLine.textContent = '✗ 测试异常：' + String(err?.message || err);
+        } finally { btn.disabled = false; btn.textContent = '测试连接'; }
+      } }, '测试连接')),
+    testLine);
 
-  page.append(h('div', { class: 'section-title' }, '自定义接入'), customForm);
+  page.append(h('div', { class: 'section-title' }, 'AI 后台服务'), backendCard);
+  drawStatus();
 
   /* ---- 存储管理 ---- */
   function storageCard() {
@@ -207,24 +142,6 @@ export function render(root) {
 
   page.append(h('div', { class: 'section-title' }, '存储管理'), storageCard());
 
-  /* ---- 后端代理 ---- */
-  const px = store.state.proxy;
-  const pxUrl = h('input', { class: 'form-input', value: px.url || '', placeholder: 'https://xxxx.functions.supabase.co/pavo-proxy' });
-  const pxAnon = h('input', { class: 'form-input', type: 'password', value: px.anon || '', placeholder: 'anon key（可选）' });
-  const pxEnable = h('input', { type: 'checkbox', checked: !!px.enabled });
-
-  page.append(h('div', { class: 'section-title' }, '后端代理（可选）'),
-    h('div', { class: 'provider-card' },
-      h('div', { class: 'hint', style: { marginTop: '0', marginBottom: '14px' } },
-        '浏览器直连模型 API 时常会被 CORS 拦。填一个 Supabase Edge Function 地址后，请求会经它转发，顺带还能把素材存进 Supabase Storage。'),
-      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '代理地址'), pxUrl),
-      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'anon key'), pxAnon),
-      h('label', { class: 'f-check', style: { marginBottom: '14px' } }, pxEnable, h('span'), '启用后端代理'),
-      h('button', { class: 'btn-ghost', onclick: () => {
-        store.set({ proxy: { url: pxUrl.value.trim(), anon: pxAnon.value.trim(), enabled: pxEnable.checked } });
-        toast('已保存', 'ok');
-      } }, '保存代理配置')));
-
   /* ---- 账号与数据 ---- */
   const u = auth.user;
   page.append(h('div', { class: 'section-title' }, '账号与数据'),
@@ -273,8 +190,6 @@ export function render(root) {
             } }, '删除'))))
           : h('div', { class: 'hint' }, '暂无申请账号')));
   }
-
-  drawList();
 }
 
 function importData() {

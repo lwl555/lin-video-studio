@@ -96,6 +96,19 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .f-check input:checked + span{background:var(--brand);border-color:var(--brand)}
 .f-check input:checked + span::after{content:'';position:absolute;left:4px;top:1px;width:5px;height:9px;
   border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+/* 开关（设置页 AI 后台） */
+.switch{position:relative;display:inline-block;width:46px;height:26px;flex:0 0 auto}
+.switch input{display:none}
+.switch .slider{position:absolute;inset:0;background:#D5D7DC;border-radius:999px;transition:.2s;cursor:pointer}
+.switch .slider::before{content:'';position:absolute;left:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch input:checked + .slider{background:var(--brand)}
+.switch input:checked + .slider::before{transform:translateX(20px)}
+/* 后台状态行 */
+.backend-status{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px}
+.backend-status .dot{width:8px;height:8px;border-radius:50%;background:var(--brand);flex:0 0 auto}
+.backend-status.ok{color:#0E7C6E}
+.backend-status.off{color:var(--txt-2)}
+.backend-status.off .dot{background:#C2C5CC}
 .f-link{color:var(--txt-2);font-size:12.5px}
 .f-link:hover{color:var(--brand-2)}
 .auth-error{color:var(--err);font-size:12.5px;min-height:20px;margin-bottom:6px}

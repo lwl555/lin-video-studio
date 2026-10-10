@@ -25,9 +25,14 @@ export const PRESETS = [
 
 export const TYPE_LABEL = { text: '文本/剧情', image: '图像', video: '视频', audio: '音频/TTS（预留）' };
 
+/* 当列表为空（用户不再手动配置模型）时，用预配置后台充当默认 provider，
+   这样首页 / 图像 / 视频 / 画布等原有的「模型选择器」不会退化成「未接入」 */
+function backendAsProvider(t) {
+  return { id: '__backend', name: '平台 AI 后台', type: t, model: '已连接', enabled: true, apiKey: '', baseUrl: '' };
+}
 export const providers = {
-  all: () => store.list('providers'),
-  byType: t => store.list('providers').filter(p => p.type === t && p.enabled !== false),
+  all: () => { const a = store.list('providers'); return a.length ? a : [backendAsProvider('text'), backendAsProvider('image'), backendAsProvider('video')]; },
+  byType: t => { const a = store.list('providers').filter(p => p.type === t && p.enabled !== false); return a.length ? a : [backendAsProvider(t)]; },
   defaultOf: t => providers.byType(t)[0] || null,
   add(p) { return store.add('providers', { id: uid('pv'), enabled: true, ...p }); },
   update(id, patch) { return store.update('providers', id, patch); },
@@ -35,27 +40,24 @@ export const providers = {
   get(id) { return store.find('providers', id); }
 };
 
-/* ---------- 请求核心：直连或经 Supabase 代理 ---------- */
-/* 任何请求都必须有超时，否则网络层静默挂起时 UI 会永远停在「进行中」 */
+/* ---------- 后端通道：平台预配置，用户完全不可见 ---------- */
+import { BACKEND, backendProvider } from './backend.js';
 const DEFAULT_TIMEOUT = 60000;
 
-async function request(url, { method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
-  const px = store.state.proxy;
+/* 后台是否启用（用户可在「设置」开关，持久化在 store.state.backend.enabled） */
+function backendOn() {
+  const b = store.state.backend;
+  return b ? b.enabled !== false : BACKEND.enabled;
+}
+
+async function request(path, { method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
+  if (!backendOn()) throw new Error('AI 后台未启用，请到「设置 → AI 后台服务」开启');
+  /* 走服务端代理时，前端只把请求发到代理地址，密钥由代理侧注入，前端零暴露 */
+  const url = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '') + path;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
   const secs = Math.round(timeout / 1000);
   try {
-    if (px.enabled && px.url) {
-      const r = await fetch(px.url.replace(/\/$/, '') + '/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(px.anon ? { Authorization: `Bearer ${px.anon}` } : {}) },
-        body: JSON.stringify({ url, method, headers, body }),
-        signal: ctl.signal
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) throw new Error(j.error || `代理请求失败 ${r.status}`);
-      return j;   // {status, body}
-    }
     const r = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json', ...headers },
@@ -65,21 +67,16 @@ async function request(url, { method = 'POST', headers = {}, body, timeout = DEF
     const txt = await r.text();
     if (!r.ok) {
       let hint = '';
-      if (r.status === 401 || r.status === 403) hint = '（API Key 无效或没有该模型权限）';
-      else if (r.status === 404) hint = '（模型名或 Base URL 路径不对）';
+      if (r.status === 401 || r.status === 403) hint = '（后端密钥无效或模型无权限，请联系平台）';
+      else if (r.status === 404) hint = '（模型名或路径不对）';
       else if (r.status === 429) hint = '（触发限流，等 1 分钟再试）';
       throw new Error(`HTTP ${r.status}${hint} ${txt.slice(0, 240)}`);
     }
     let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
     return { status: r.status, body: j };
   } catch (e) {
-    if (e?.name === 'AbortError') {
-      throw new Error(`请求超时（${secs} 秒无响应）。检查网络，或在下方「后端代理」里填一个转发地址。`);
-    }
-    /* 浏览器对 CORS 预检失败 / DNS 失败 / 断网 统一抛 TypeError，这里翻译成人话 */
-    if (e instanceof TypeError) {
-      throw new Error(`连不上模型服务（${e.message || '网络错误'}）。常见原因：① Base URL 写错；② 该服务未开放浏览器跨域（CORS），需在下方配置后端代理。`);
-    }
+    if (e?.name === 'AbortError') throw new Error(`请求超时（${secs} 秒无响应）`);
+    if (e instanceof TypeError) throw new Error(`连不上模型服务（${e.message || '网络错误'}）`);
     throw e;
   } finally {
     clearTimeout(timer);
@@ -89,13 +86,10 @@ async function request(url, { method = 'POST', headers = {}, body, timeout = DEF
 function authHeaders(key) {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
-const norm = b => (b && b.baseUrl ? b.baseUrl.replace(/\/$/, '') : '');
 
 /* ---------- 文本 ---------- */
-export async function chat(prompt, { provider, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
-  const p = provider || providers.defaultOf('text');
-  if (!p) throw new Error('尚未接入文本模型，请到「模型接入」添加');
-  const url = `${norm(p)}/chat/completions`;
+export async function chat(prompt, { system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
+  const p = backendProvider('text');
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : prompt;
@@ -106,7 +100,7 @@ export async function chat(prompt, { provider, system = '', json = false, temper
     stream: false
   };
   if (json) body.response_format = { type: 'json_object' };
-  const res = await request(url, { headers: authHeaders(p.apiKey), body, timeout });
+  const res = await request('/chat/completions', { headers: authHeaders(p.apiKey), body, timeout });
   const b = res.body || {};
   const text = b?.choices?.[0]?.message?.content
     ?? b?.choices?.[0]?.text
@@ -122,15 +116,11 @@ export async function chat(prompt, { provider, system = '', json = false, temper
 }
 
 /* ---------- 图像 ---------- */
-export async function genImage(prompt, { provider, size = '1024x1024', n = 1, images = [] } = {}) {
-  const p = provider || providers.defaultOf('image');
-  if (!p) throw new Error('尚未接入图像模型，请到「模型接入」添加');
-  const base = norm(p);
-  // 图生图：部分兼容接口用 /images/edits 或直接在 generations 传 image
-  const path = images.length ? (p.editPath || '/images/generations') : '/images/generations';
+export async function genImage(prompt, { size = '1024x1024', n = 1, images = [] } = {}) {
+  const p = backendProvider('image');
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
-  const res = await request(base + path, { headers: authHeaders(p.apiKey), body, timeout: 180000 });
+  const res = await request('/images/generations', { headers: authHeaders(p.apiKey), body, timeout: 180000 });
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
@@ -140,12 +130,10 @@ export async function genImage(prompt, { provider, size = '1024x1024', n = 1, im
 }
 
 /* ---------- 视频（异步任务轮询，兼容主流结构） ---------- */
-export async function genVideo(prompt, { provider, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
-  const p = provider || providers.defaultOf('video');
-  if (!p) throw new Error('尚未接入视频模型，请到「模型接入」添加');
-  const base = norm(p);
-  const submitPath = p.submitPath || '/video/generations';
-  const queryPath = p.queryPath || '/video/status';
+export async function genVideo(prompt, { images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
+  const p = backendProvider('video');
+  const submitPath = '/video/generations';
+  const queryPath = '/video/status';
   let full = prompt || 'cinematic shot';
   if (motion) full += `（运镜要求：${motion}）`;
   const body = { model: p.model, prompt: full };
@@ -154,27 +142,19 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
   if (firstFrame) imgs.unshift(firstFrame);
   if (lastFrame) imgs.push(lastFrame);
   if (imgs.length) body.images = imgs;
-  /* 实测 Agnes 拒绝 duration 等字段，默认不注入；时长/画幅写进 prompt 即可。需要额外参数时在模型接入里填 extra（JSON） */
-  if (p.extra) {
-    try { Object.assign(body, typeof p.extra === 'string' ? JSON.parse(p.extra) : p.extra); } catch { /* 忽略 */ }
-  }
-
   onProgress?.('提交任务…');
-  const res = await request(base + submitPath, { headers: authHeaders(p.apiKey), body, timeout: 90000 });
+  const res = await request(submitPath, { headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
-
   const direct = b?.video_url || b?.url || b?.data?.video_url || b?.data?.url || b?.output?.video_url;
   if (direct) return { url: direct, raw: b };
-
   const id = b?.id || b?.task_id || b?.data?.id || b?.data?.task_id || b?.output?.id;
   if (!id) throw new Error('视频任务提交失败（未取到任务 ID）：' + JSON.stringify(b).slice(0, 250));
-
   for (let i = 0; i < 120; i++) {
     await new Promise(r => setTimeout(r, 4000));
     onProgress?.(`生成中… ${Math.min(100, Math.round(i * 100 / 60))}%`);
     let s;
     try {
-      s = await request(`${base}${queryPath}?id=${encodeURIComponent(id)}`, {
+      s = await request(`${queryPath}?id=${encodeURIComponent(id)}`, {
         method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000
       });
     } catch (e) { continue; }
@@ -190,28 +170,15 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
     }
     if (fail) throw new Error('视频生成失败：' + JSON.stringify(sb).slice(0, 200));
   }
-  throw new Error('视频生成超时，请到提供商后台查看任务结果');
+  throw new Error('视频生成超时，请到后台查看任务结果');
 }
 
-/* ---------- 连通性自检 ---------- */
-export async function testProvider(p) {
-  /* 先做本地校验，省掉一次注定失败的请求 */
-  if (!p.baseUrl) return { ok: false, msg: '还没填 Base URL' };
-  if (!p.model) return { ok: false, msg: '还没填模型名' };
-  if (p.type !== 'video' && !p.apiKey) return { ok: false, msg: '还没填 API Key' };
+/* ---------- 后端连通性自检（供设置页「测试连接」） ---------- */
+export async function testBackend() {
+  if (!backendOn()) return { ok: false, msg: 'AI 后台已关闭' };
   const t0 = Date.now();
   try {
-    if (p.type === 'text') {
-      const t = await chat('回复OK两个字', { provider: p, timeout: 30000 });
-      return { ok: true, msg: `连通正常（${Date.now() - t0}ms）：` + String(t).replace(/\s+/g, ' ').slice(0, 30) };
-    }
-    if (p.type === 'image') {
-      const r = await genImage('a small white cat', { provider: p, size: '512x512' });
-      return { ok: true, msg: `图像可用（${Date.now() - t0}ms）`, url: r.url };
-    }
-    if (p.type === 'video') {
-      return { ok: true, msg: '配置已保存（视频测试会消耗额度，已跳过实际生成）' };
-    }
+    const t = await chat('回复OK两个字', { timeout: 30000 });
+    return { ok: true, msg: `连通正常（${Date.now() - t0}ms）：` + String(t).replace(/\s+/g, ' ').slice(0, 30) };
   } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
-  return { ok: false, msg: '未知类型' };
 }
