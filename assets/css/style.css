@@ -340,6 +340,36 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .node-del{position:absolute;top:-9px;right:-9px;width:20px;height:20px;border-radius:50%;background:#fff;
   border:1px solid #FECACA;color:var(--err);font-size:12px;display:none;align-items:center;justify-content:center;z-index:4}
 .node:hover .node-del{display:flex}
+
+/* 折叠态（未选中）：只露结果预览，点击才展开编辑面板 */
+.node.collapsed{cursor:pointer}
+.node.collapsed .node-body{padding:8px;display:flex;flex-direction:column;gap:8px}
+.node.collapsed .node-media img,.node.collapsed .node-media video{max-height:300px}
+.node.collapsed .node-status{padding:6px 2px 0}
+.node.collapsed .node-text{max-height:118px;overflow:hidden;
+  -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent)}
+.node-actions:empty{display:none}
+.node-status.err{color:var(--err)}
+.node-media .media-badge{position:absolute;left:8px;top:8px;font-size:10.5px;padding:2px 7px;border-radius:6px;
+  background:rgba(0,0,0,.55);color:#fff;letter-spacing:.3px}
+.node-media .media-edit{position:absolute;right:8px;top:8px;font-size:10.5px;padding:3px 8px;border-radius:6px;
+  background:rgba(255,255,255,.94);color:var(--txt-2);border:1px solid var(--line);opacity:0;transition:.15s}
+.node.collapsed .node-media:hover .media-edit{opacity:1}
+.node-cap{font-size:11.5px;color:var(--txt-3);line-height:1.55;padding:0 2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.media-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;
+  border-radius:50%;background:rgba(0,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:.15s;padding-left:2px}
+.media-play:hover{background:rgba(0,0,0,.72);transform:translate(-50%,-50%) scale(1.06)}
+.node-ph{display:flex;flex-direction:column;align-items:center;gap:9px;padding:26px 14px;text-align:center;
+  border:1px dashed var(--line-2);border-radius:10px;background:var(--bg)}
+.node-ph .ph-ico{color:var(--txt-3);display:flex}
+.node-ph .ph-t{font-size:11.5px;color:var(--txt-3);line-height:1.6;max-width:206px}
+.node-ph .ph-btn{font-size:11.5px;color:var(--txt-2);background:#fff;border:1px solid var(--line-2);
+  border-radius:7px;padding:3px 11px}
+.node.collapsed:hover .node-ph{border-color:var(--brand)}
+.node.collapsed:hover .node-ph .ph-btn{border-color:var(--brand);color:var(--brand-2)}
+.node.collapsed:hover{border-color:#CFD3D9}
 .canvas-toolbar{position:absolute;left:16px;bottom:16px;display:flex;gap:8px;align-items:center;
   background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 10px;
   box-shadow:var(--shadow-m);z-index:20}

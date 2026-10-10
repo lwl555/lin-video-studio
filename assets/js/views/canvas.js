@@ -202,6 +202,24 @@ export function renderEditor(root, params) {
   }
 
   /* ---- 节点元素 ---- */
+  /* 折叠态（未选中）：只露结果预览，像 Pavo 一样一眼看清生成物；
+     选中态：展开提示词、参数与按钮，才显示可编辑面板 */
+  const isSel = node => !!selected && !!node && selected.id === node.id;
+  const PH_HINT = {
+    text: '点击节点，写需求生成文案/脚本',
+    image: '点击节点，描述画面或连上参考图',
+    video: '点击节点，描述镜头或连上首帧',
+    audio: '点击节点，上传音频或生成配音',
+    merge: '把视频节点连过来，点击合成成片',
+    director: '点击节点，打开 3D 导演台摆位截图',
+    upload: '点击节点，上传文件作为素材'
+  };
+  function paintState(el, node) {
+    const sel = isSel(node);
+    el.classList.toggle('selected', sel);
+    el.classList.toggle('collapsed', !sel);
+  }
+
   function buildNode(node) {
     const meta = NODE_REGISTRY[node.type] || NODE_REGISTRY.text;
     const modelTag = h('span', { class: 'node-model' });
@@ -225,10 +243,11 @@ export function renderEditor(root, params) {
       h('div', { class: 'node-port port-out', title: '拖出连线' }, '＋')
     );
     el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+    paintState(el, node);
     nodeEls.set(node.id, el);
 
     /* 选择 */
-    el.addEventListener('mousedown', () => { select(node); }, true);
+    el.addEventListener('mousedown', e => { if (e.target.closest('.media-play')) return; select(node); }, true);
 
     /* 拖动 */
     el.querySelector('.node-head').addEventListener('mousedown', e => {
@@ -296,8 +315,56 @@ export function renderEditor(root, params) {
     return el;
   }
 
+  /* 折叠态内容：只显示已生成的结果（图/视频/文案）或空占位 */
+  function renderCollapsed(node, body) {
+    if (node.media?.url) {
+      const isVid = node.media.type === 'video';
+      const media = isVid
+        ? h('video', { src: node.media.url, preload: 'metadata', muted: true, playsinline: true })
+        : h('img', { src: node.media.url, loading: 'lazy', alt: node.title || '' });
+      let playBtn = null;
+      if (isVid) {
+        playBtn = h('span', { class: 'media-play', title: '就地播放', onclick: e => {
+          e.stopPropagation();
+          media.controls = true; media.muted = false;
+          media.play().catch(() => { toast('该视频暂时无法播放', 'err'); });
+          playBtn.style.display = 'none';
+        } }, h('span', { html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5.4l11 6.6-11 6.6z"/></svg>' }));
+      }
+      body.append(h('div', { class: 'node-media' },
+        media,
+        h('span', { class: 'media-badge' }, isVid ? '视频' : '图片'),
+        playBtn,
+        h('span', { class: 'media-edit' }, '点击展开编辑')));
+      const cap = (node.prompt || node.content || '').trim();
+      if (cap) body.append(h('div', { class: 'node-cap' }, cap));
+    } else if (node.content) {
+      body.append(h('div', { class: 'node-text' }, node.content));
+    } else {
+      body.append(h('div', { class: 'node-ph' },
+        h('div', { class: 'ph-ico', html: icon(node.type === 'video' ? 'video' : node.type === 'image' ? 'image' : 'layers', 22) }),
+        h('div', { class: 'ph-t' }, PH_HINT[node.type] || '点击节点，描述你的需求后生成'),
+        h('span', { class: 'ph-btn' }, '打开面板')));
+    }
+  }
+
   function renderBody(node, body, actions, rerender) {
     body.innerHTML = ''; actions.innerHTML = '';
+    const expanded = isSel(node);
+    const statusEl = node.status ? h('div', { class: 'node-status' }, h('span', { class: 'spinner' }), node.status) : null;
+    const errEl = node.error ? h('div', { class: 'node-status err' }, '⚠ ' + node.error) : null;
+
+    /* 折叠态：只露结果，不露任何可编辑控件 */
+    if (!expanded) {
+      body.classList.add('collapsed');
+      renderCollapsed(node, body);
+      if (statusEl) body.append(statusEl);
+      if (errEl) body.append(errEl);
+      return;
+    }
+    body.classList.remove('collapsed');
+    if (statusEl) body.append(statusEl);
+    if (errEl) body.append(errEl);
 
     /* 尝试区 */
     const tries = TRY[node.type] || TRY.text;
@@ -318,9 +385,6 @@ export function renderEditor(root, params) {
     if (node.type === 'director') body.append(renderDirector(node));
     if (node.content) body.append(h('div', { class: 'node-text', style: { marginTop: node.media?.url ? '8px' : '0' } }, node.content));
     if (node.type === 'video') body.append(renderVideoOpts(node, refresh));
-
-    if (node.status) body.append(h('div', { class: 'node-status' }, h('span', { class: 'spinner' }), node.status));
-    if (node.error) body.append(h('div', { class: 'node-status', style: { color: 'var(--err)' } }, '⚠ ' + node.error));
 
     /* 输入区 */
     if (['text', 'image', 'video', 'merge', 'director'].includes(node.type)) {
@@ -344,7 +408,9 @@ export function renderEditor(root, params) {
         onclick: () => toast('配音 / 音色克隆 / 音效生成：接口已预留，接入 TTS 模型后开放', 'ok', 4200)
       }, '配音（开发中）'));
     }
-    actions.append(h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
+    actions.append(
+      h('button', { class: 'node-btn', title: '收起面板，只看结果', onclick: deselect }, '收起'),
+      h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
   }
 
   function renderVideoOpts(node, refresh) {
@@ -448,6 +514,7 @@ export function renderEditor(root, params) {
     const w = at || toWorld(innerWidth / 2 - 150, innerHeight / 2 - 90);
     const n = { id: uid('n'), type, x: w.x - 150, y: w.y - 60, title: NODE_REGISTRY[type].label + '节点', prompt: '', content: '', media: null };
     proj.nodes.push(n); refresh(); save();
+    select(n);                       /* 新建即展开，方便直接写需求 */
     return n;
   }
   function delNode(node) {
@@ -457,8 +524,17 @@ export function renderEditor(root, params) {
     nodeEls.delete(node.id); refresh(); save();
   }
   function select(node) {
+    const prev = selected;
+    if (prev && prev.id === node.id) return;   /* 已选中：不动，避免打断输入框 */
     selected = node;
-    $$('.node').forEach(el => el.classList.toggle('selected', el.dataset.id === node.id));
+    if (prev) { const pe = nodeEls.get(prev.id); if (pe) paintState(pe, prev); refresh(prev); }
+    const el = nodeEls.get(node.id); if (el) paintState(el, node);
+    refresh(node);
+  }
+  function deselect() {
+    const prev = selected;
+    selected = null;
+    if (prev) { const pe = nodeEls.get(prev.id); if (pe) paintState(pe, prev); refresh(prev); }
   }
   function toAsset(node) {
     if (!node.media?.url) return toast('这个节点还没有素材', 'err');
@@ -570,6 +646,7 @@ export function renderEditor(root, params) {
       const el = nodeEls.get(only.id); if (!el) return;
       const body = el.querySelector('.node-body'), actions = el.querySelector('.node-actions');
       renderBody(only, body, actions, () => refresh(only));
+      paintState(el, only);
       el.style.left = only.x + 'px'; el.style.top = only.y + 'px';
       el.classList.toggle('running', !!only.status);
       el.querySelector('.node-model').textContent = modelChip(only.type === 'image' ? 'image' : only.type === 'video' ? 'video' : 'text');
@@ -581,7 +658,7 @@ export function renderEditor(root, params) {
   /* ---- 画布交互 ---- */
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.node') || e.target.closest('.canvas-toolbar') || e.target.closest('.canvas-topbar')) return;
-    selected = null; $$('.node').forEach(el => el.classList.remove('selected'));
+    deselect();
     const sx = e.clientX, sy = e.clientY, ox = vp.x, oy = vp.y;
     const move = ev => { vp.x = ox + ev.clientX - sx; vp.y = oy + ev.clientY - sy; applyVp(); };
     const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(); };
