@@ -3,3 +3,6 @@ _tmp/
 node_modules/
 .DS_Store
 *.log
+_preview_*.png
+preview-login.html
+_chk_*.mjs

@@ -1,6 +1,6 @@
 /* ============ 应用入口：认证 + 路由 ============ */
 import { store, auth, ADMIN } from './store.js';
-import { $, $$, toast } from './ui.js';
+import { $, $$, toast, h } from './ui.js';
 import { usageReport } from './storage.js';
 import * as Home from './views/home.js';
 import * as Canvas from './views/canvas.js';
@@ -76,7 +76,7 @@ const ROUTES = {
   assets: Assets.render, works: Works.render, settings: Settings.render
 };
 const NAV_OF = { home: 'inspire', inspire: 'inspire', series: 'series', canvas: 'canvas', 'canvas-edit': 'canvas',
-  works: 'works', assets: 'assets', settings: 'settings', image: 'inspire', video: 'inspire', studio: 'series' };
+  works: 'works', assets: 'assets', settings: 'settings', image: 'image', video: 'video', studio: 'series' };
 let current = 'home';
 
 export function go(route, params = {}) {
@@ -112,9 +112,30 @@ function bootApp() {
   });
   $('#top-avatar').addEventListener('click', () => go('settings'));
   $('#btn-notice').addEventListener('click', () => toast('暂无新通知'));
-  $('#global-search').addEventListener('keydown', e => {
-    if (e.key === 'Enter') go('works', { q: e.target.value.trim() });
-  });
+  /* 顶栏全局搜索：实时浮层，跨作品/短剧/资产/画布检索（参考 Pavo 顶栏搜索） */
+  const sb = $('#global-search');
+  const sbBox = sb.closest('.search-box');
+  sbBox.style.position = 'relative';
+  const panel = h('div', { class: 'search-panel hidden' });
+  sbBox.append(panel);
+  const doSearch = q => {
+    q = (q || '').trim().toLowerCase();
+    if (!q) { panel.classList.add('hidden'); return; }
+    const res = [];
+    for (const w of store.list('works')) if ((w.title || '').toLowerCase().includes(q)) res.push({ t: w.title || '未命名', sub: w.type === 'video' ? '视频' : '图片', route: 'works', id: w.id });
+    for (const s of store.list('series')) if ((s.title || '').toLowerCase().includes(q)) res.push({ t: s.title || '未命名', sub: '短剧', route: 'series', id: s.id });
+    for (const a of store.list('assets')) if ((a.name || '').toLowerCase().includes(q)) res.push({ t: a.name || '未命名', sub: '资产', route: 'assets', id: a.id });
+    for (const p of store.list('projects')) if ((p.name || '').toLowerCase().includes(q)) res.push({ t: p.name || '未命名', sub: '画布', route: 'canvas-edit', id: p.id });
+    if (!res.length) { panel.innerHTML = '<div class="sp-empty">没有匹配「' + q + '」的结果</div>'; panel.classList.remove('hidden'); return; }
+    panel.innerHTML = '';
+    for (const r of res.slice(0, 12)) panel.append(
+      h('div', { class: 'sp-item', onclick: () => { panel.classList.add('hidden'); sb.value = ''; go(r.route, { id: r.id }); } },
+        h('span', { class: 'sp-tag' }, r.sub), h('span', { class: 'sp-title' }, r.t)));
+    panel.classList.remove('hidden');
+  };
+  sb.addEventListener('input', e => doSearch(e.target.value));
+  sb.addEventListener('focus', e => doSearch(e.target.value));
+  document.addEventListener('click', e => { if (!sbBox.contains(e.target)) panel.classList.add('hidden'); });
 
   const n = store.list('providers').length;
   $('#credit-num').textContent = n ? `${n} 个模型` : 'BYOK';

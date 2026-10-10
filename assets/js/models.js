@@ -113,14 +113,20 @@ export async function genImage(prompt, { provider, size = '1024x1024', n = 1, im
 }
 
 /* ---------- 视频（异步任务轮询，兼容主流结构） ---------- */
-export async function genVideo(prompt, { provider, images = [], duration = 5, ratio = '16:9', onProgress } = {}) {
+export async function genVideo(prompt, { provider, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
   const p = provider || providers.defaultOf('video');
   if (!p) throw new Error('尚未接入视频模型，请到「模型接入」添加');
   const base = norm(p);
   const submitPath = p.submitPath || '/video/generations';
   const queryPath = p.queryPath || '/video/status';
-  const body = { model: p.model, prompt };
-  if (images.length) body.images = images;
+  let full = prompt || 'cinematic shot';
+  if (motion) full += `（运镜要求：${motion}）`;
+  const body = { model: p.model, prompt: full };
+  /* 首尾帧作为参考图注入：图生视频补间最常用 */
+  const imgs = [...images];
+  if (firstFrame) imgs.unshift(firstFrame);
+  if (lastFrame) imgs.push(lastFrame);
+  if (imgs.length) body.images = imgs;
   /* 实测 Agnes 拒绝 duration 等字段，默认不注入；时长/画幅写进 prompt 即可。需要额外参数时在模型接入里填 extra（JSON） */
   if (p.extra) {
     try { Object.assign(body, typeof p.extra === 'string' ? JSON.parse(p.extra) : p.extra); } catch { /* 忽略 */ }

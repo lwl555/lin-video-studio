@@ -6,7 +6,8 @@ import { openDirector } from '../director.js';
 import { concatVideos } from '../media.js';
 import { go } from '../app.js';
 
-const NODE_META = {
+/* 节点注册表（插件化入口）：默认节点 + 外部可 registerNodeType 扩展 */
+export const NODE_REGISTRY = {
   text: { label: '文本', icon: '文' },
   image: { label: '图片', icon: '图' },
   video: { label: '视频', icon: '视' },
@@ -15,6 +16,7 @@ const NODE_META = {
   director: { label: '导演台', icon: '导' },
   upload: { label: '素材', icon: '素' }
 };
+export function registerNodeType(type, meta) { NODE_REGISTRY[type] = meta; }
 const TRY = {
   text: ['自己编写', '一句话生成剧本', '扩写成分镜脚本', '文生图', '文生视频', '图片反推提示词'],
   image: ['文生图', '图生图', '角色四视图', '场景设定图', '局部重绘'],
@@ -79,6 +81,19 @@ export function renderEditor(root, params) {
     scheduleMinimap();
   };
   const save = () => { proj.updatedAt = Date.now(); store.save(); };
+
+  /* ---- 撤销 / 重做（参考 PinCanvas/Zundo 思路） ---- */
+  const undoStack = [], redoStack = [];
+  const takeSnap = () => JSON.stringify({ n: proj.nodes, e: proj.edges });
+  const pushUndo = () => { undoStack.push(takeSnap()); if (undoStack.length > 60) undoStack.shift(); redoStack.length = 0; updateUndoButtons(); };
+  function updateUndoButtons() { if (undoBtn) undoBtn.disabled = !undoStack.length; if (redoBtn) redoBtn.disabled = !redoStack.length; }
+  function restoreSnap(snap) {
+    const d = JSON.parse(snap);
+    proj.nodes = d.n; proj.edges = d.e;
+    selected = null; refresh(); save(); updateUndoButtons();
+  }
+  function undo() { if (!undoStack.length) return; redoStack.push(takeSnap()); restoreSnap(undoStack.pop()); toast('已撤销', 'ok', 900); }
+  function redo() { if (!redoStack.length) return; undoStack.push(takeSnap()); restoreSnap(redoStack.pop()); toast('已重做', 'ok', 900); }
 
   /* ---- 小地图（鸟瞰导航，Pavo 同款） ---- */
   let mmVisible = true, mmTransform = null, mmScheduled = false;
@@ -187,7 +202,7 @@ export function renderEditor(root, params) {
 
   /* ---- 节点元素 ---- */
   function buildNode(node) {
-    const meta = NODE_META[node.type] || NODE_META.text;
+    const meta = NODE_REGISTRY[node.type] || NODE_REGISTRY.text;
     const modelTag = h('span', { class: 'node-model' });
     const syncModel = () => {
       const t = node.type === 'image' ? 'image' : node.type === 'video' ? 'video' : 'text';
@@ -219,7 +234,9 @@ export function renderEditor(root, params) {
       if (e.target.closest('.node-model')) return;
       e.stopPropagation();
       const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
+      let pushed = false;
       const move = ev => {
+        if (!pushed) { pushUndo(); pushed = true; }
         node.x = ox + (ev.clientX - sx) / vp.zoom;
         node.y = oy + (ev.clientY - sy) / vp.zoom;
         el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
@@ -250,6 +267,7 @@ export function renderEditor(root, params) {
         if (hit) {
           const target = proj.nodes.find(n => n.id === hit.dataset.id);
           if (target && target.id !== node.id && !proj.edges.some(x => x.from === node.id && x.to === target.id)) {
+            pushUndo();
             proj.edges.push({ id: uid('e'), from: node.id, to: target.id });
             save(); drawEdges(); refresh(target);
           }
@@ -264,9 +282,9 @@ export function renderEditor(root, params) {
       e.preventDefault(); e.stopPropagation();
       ctxMenu(e.clientX, e.clientY, [
         { text: '生成 / 重跑', onClick: () => run(node, refresh) },
-        { text: '复制节点', onClick: () => { const c = structuredClone(node); c.id = uid('n'); c.x += 40; c.y += 40; proj.nodes.push(c); refresh(); save(); } },
+        { text: '复制节点', onClick: () => { pushUndo(); const c = structuredClone(node); c.id = uid('n'); c.x += 40; c.y += 40; proj.nodes.push(c); refresh(); save(); } },
         { text: '另存为资产', onClick: () => toAsset(node) },
-        { text: '从此节点分支', onClick: () => { const c = structuredClone(node); c.id = uid('n'); c.x = node.x + 380; c.y = node.y + 200; c.media = null; c.content = ''; proj.nodes.push(c); proj.edges.push({ id: uid('e'), from: node.id, to: c.id }); refresh(); save(); } },
+        { text: '从此节点分支', onClick: () => { pushUndo(); const c = structuredClone(node); c.id = uid('n'); c.x = node.x + 380; c.y = node.y + 200; c.media = null; c.content = ''; proj.nodes.push(c); proj.edges.push({ id: uid('e'), from: node.id, to: c.id }); refresh(); save(); } },
         '-',
         { text: '下载素材', onClick: () => node.media?.url && download(node.media.url, node.title + '.png') },
         { text: '删除节点', onClick: () => delNode(node) }
@@ -298,6 +316,7 @@ export function renderEditor(root, params) {
     if (node.type === 'merge') body.append(renderMerge(node, refresh));
     if (node.type === 'director') body.append(renderDirector(node));
     if (node.content) body.append(h('div', { class: 'node-text', style: { marginTop: node.media?.url ? '8px' : '0' } }, node.content));
+    if (node.type === 'video') body.append(renderVideoOpts(node, refresh));
 
     if (node.status) body.append(h('div', { class: 'node-status' }, h('span', { class: 'spinner' }), node.status));
     if (node.error) body.append(h('div', { class: 'node-status', style: { color: 'var(--err)' } }, '⚠ ' + node.error));
@@ -325,6 +344,31 @@ export function renderEditor(root, params) {
       }, '配音（开发中）'));
     }
     actions.append(h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
+  }
+
+  function renderVideoOpts(node, refresh) {
+    const wrap = h('div', { class: 'video-opts' });
+    const motion = h('select', { class: 'form-select sm', onchange: e => { node.motion = e.target.value; save(); } });
+    ['无运镜', '缓慢推近', '缓慢拉远', '水平横移', '垂直升降', '环绕运镜', '手持跟拍', '航拍俯冲'].forEach(m => motion.append(h('option', { value: m }, m)));
+    motion.value = node.motion || '无运镜';
+    wrap.append(h('div', { class: 'vo-row' }, h('span', { class: 'vo-label' }, '运镜'), motion));
+
+    const fr = h('div', { class: 'vo-frames' });
+    for (const f of ['首帧', '尾帧']) {
+      const key = f === '首帧' ? 'firstFrame' : 'lastFrame';
+      const slot = h('div', { class: 'ref-slot sm' },
+        node[key] ? h('img', { src: node[key] }) : h('span', {}, f),
+        node[key] ? h('div', { class: 'del', onclick: ev => { ev.stopPropagation(); node[key] = null; refresh(node); save(); } }, '×') : null);
+      slot.onclick = async () => {
+        if (node[key]) return;
+        const fl = await pickFile('image/*'); if (!fl) return;
+        let url; try { url = await saveMedia(fl); } catch (e) { toast(e.message, 'err'); return; }
+        node[key] = url; refresh(node); save();
+      };
+      fr.append(slot);
+    }
+    wrap.append(h('div', { class: 'vo-label' }, '首尾帧（图生视频补间）'), fr);
+    return wrap;
   }
 
   function renderMerge(node, refresh) {
@@ -397,12 +441,14 @@ export function renderEditor(root, params) {
 
   /* ---- 节点操作 ---- */
   function addNode(type, at) {
+    pushUndo();
     const w = at || toWorld(innerWidth / 2 - 150, innerHeight / 2 - 90);
-    const n = { id: uid('n'), type, x: w.x - 150, y: w.y - 60, title: NODE_META[type].label + '节点', prompt: '', content: '', media: null };
+    const n = { id: uid('n'), type, x: w.x - 150, y: w.y - 60, title: NODE_REGISTRY[type].label + '节点', prompt: '', content: '', media: null };
     proj.nodes.push(n); refresh(); save();
     return n;
   }
   function delNode(node) {
+    pushUndo();
     proj.nodes = proj.nodes.filter(n => n.id !== node.id);
     proj.edges = proj.edges.filter(e => e.from !== node.id && e.to !== node.id);
     nodeEls.delete(node.id); refresh(); save();
@@ -495,7 +541,7 @@ export function renderEditor(root, params) {
         store.add('works', { id: uid('w'), title: (node.prompt || '图片').slice(0, 24), type: 'image', url: r.url, createdAt: Date.now() });
       } else if (type === 'video') {
         const p = prompt || 'cinematic shot';
-        const r = await genVideo(p, { images: refImgs.slice(0, 2), onProgress: s => { node.status = s; refresh(node); } });
+        const r = await genVideo(p, { images: refImgs.slice(0, 2), motion: node.motion, firstFrame: node.firstFrame, lastFrame: node.lastFrame, onProgress: s => { node.status = s; refresh(node); } });
         node.media = { url: r.url, type: 'video' };
         store.add('works', { id: uid('w'), title: (node.prompt || '视频').slice(0, 24), type: 'video', url: r.url, createdAt: Date.now() });
       } else if (type === 'merge') {
@@ -567,6 +613,18 @@ export function renderEditor(root, params) {
   }, { passive: false });
 
   /* ---- 顶栏 / 工具栏 ---- */
+  const projSel = h('select', { class: 'proj-sel', onchange: e => {
+    const v = e.target.value;
+    if (v === '__new') newProject();
+    else if (v) { save(); go('canvas-edit', { id: v }); }
+  } });
+  const fillProjSel = () => {
+    projSel.innerHTML = '';
+    for (const p of store.list('projects')) projSel.append(h('option', { value: p.id }, p.name));
+    projSel.append(h('option', { value: '__new' }, '＋ 新建画布'));
+    projSel.value = proj.id;
+  };
+  fillProjSel();
   const nameInput = h('input', { value: proj.name, oninput: e => { proj.name = e.target.value; save(); } });
   const zoomLabel = h('button', { class: 'zoom-label', title: '点击回到 100%', onclick: () => { vp.zoom = 1; applyVp(); } }, '100%');
 
@@ -600,6 +658,12 @@ export function renderEditor(root, params) {
     }
   }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>' }));
 
+  const undoBtn = h('button', { class: 'tb-btn', title: '撤销 (Ctrl+Z)', onclick: undo },
+    h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 14L5 10l4-4"/><path d="M5 10h10a4 4 0 010 8h-3"/></svg>' }));
+  undoBtn.disabled = true;
+  const redoBtn = h('button', { class: 'tb-btn', title: '重做 (Ctrl+Y)', onclick: redo },
+    h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 14l4-4-4-4"/><path d="M19 10H9a4 4 0 100 8h3"/></svg>' }));
+  redoBtn.disabled = true;
   const toolbar = h('div', { class: 'canvas-toolbar' },
     h('button', { class: 'tb-add', onclick: e => {
       const r = e.currentTarget.getBoundingClientRect();
@@ -616,6 +680,7 @@ export function renderEditor(root, params) {
         { text: '从资产库添加', onClick: () => { const n = addNode('image'); pickAsset(n, refresh); } }
       ]);
     } }, '＋ 添加节点'),
+    undoBtn, redoBtn,
     h('div', { class: 'tb-div' }),
     mmToggle,
     h('button', { class: 'tb-btn', title: '一键整理', onclick: arrange }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.8L20 19M8.2 16.2L20 5"/></svg>' })),
@@ -633,7 +698,7 @@ export function renderEditor(root, params) {
     h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
       h('button', { class: 'icon-btn', onclick: () => { save(); go('canvas'); }, title: '返回' },
         h('span', { html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>' })),
-      h('div', { class: 'canvas-name' }, nameInput)),
+      h('div', { class: 'canvas-name' }, projSel, nameInput)),
     h('div', { style: { display: 'flex', gap: '8px' } },
       h('button', { class: 'btn-ghost', onclick: () => toast('已自动保存') }, '保存'),
       h('button', { class: 'btn-primary', onclick: () => toast('本地模式：导出 JSON 即可备份/分享', 'ok', 3500) }, '分享')));
@@ -661,6 +726,16 @@ export function renderEditor(root, params) {
   }
 
   root.append(wrap, toolbar, topbar, mmWrap);
+
+  if (renderEditor._kbd) document.removeEventListener('keydown', renderEditor._kbd);
+  renderEditor._kbd = e => {
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  };
+  document.addEventListener('keydown', renderEditor._kbd);
   refresh();
   applyVp();
   requestAnimationFrame(() => { refresh(); applyVp(); });

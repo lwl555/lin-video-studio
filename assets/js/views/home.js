@@ -1,15 +1,24 @@
-/* ============ 首页 · 创作广场 ============ */
+/* ============ 首页 · 创作广场（对齐 Pavo 布局） ============ */
 import { h, $, toast, pickFile, modelChip, timeAgo } from '../ui.js';
 import { store, saveMedia, uid } from '../store.js';
 import { providers, chat } from '../models.js';
 import { go } from '../app.js';
 
 const MODES = [
-  { k: 'image', label: '图片生成', icon: '🖼️', ph: '描述你想要的画面。例如：黄昏的海边露营地，米白色帐篷亮起暖灯，电影感，4K。' },
-  { k: 'video', label: '视频生成', icon: '🎬', ph: '描述镜头内容与运动。例如：镜头缓慢向帐篷推进，海风吹动帐篷布，夕阳接近海平面，加入海浪声。' },
+  { k: 'image', label: '图片生成', icon: '🖼️', ph: '上传参考素材，输入文字，请描述你想生成的图片' },
+  { k: 'video', label: '视频生成', icon: '🎬', ph: '上传参考素材（首帧 / 尾帧），输入文字，请描述你想生成的视频' },
   { k: 'studio', label: '剧情短片', icon: '🎞️', ph: '一句话故事创意。例如：现代外卖员意外穿越到古代皇宫，被误认成御厨，情急之下做了一碗蛋炒饭。' },
   { k: 'agent', label: 'Agent 对话', icon: '✨', ph: '直接说需求。例如：帮我把这段故事拆成 6 个分镜，标出景别和运镜。' }
 ];
+
+const ENTRIES = [
+  { k: 'image', label: '图片生成', icon: '🖼️', desc: '多模型可选，支持商业海报、电商视觉、人物写真与风格化编辑' },
+  { k: 'video', label: '视频生成', icon: '🎬', desc: '文生视频 / 图生视频，多种画幅与清晰度' },
+  { k: 'studio', label: '剧情短片', icon: '🎞️', desc: '从剧本到成片，全流程自动生成' },
+  { k: 'agent', label: 'Agent', icon: '✨', desc: '一句话下达复合创作指令，自动拆解并执行' }
+];
+
+const CATS = ['娱乐短片', '创意图片', '科幻特效', '萌宠', '全民唱跳', '营销素材', 'Summer Breeze'];
 
 const IDEAS = [
   '黄昏海边露营，镜头缓慢推近帐篷',
@@ -51,12 +60,12 @@ export function render(root, params = {}) {
   }
   drawRefs();
 
-  const modeTabs = h('div', { class: 'mode-tabs' });
+  const modeTabs = h('div', { class: 'composer-tabs' });
   const redrawTabs = () => {
     modeTabs.innerHTML = '';
-    for (const m of MODES) {
+    for (const m of MODES.slice(0, 2)) {
       modeTabs.append(h('button', {
-        class: 'mode-tab' + (m.k === mode ? ' active' : ''),
+        class: 'ctab' + (m.k === mode ? ' active' : ''),
         onclick: () => { mode = m.k; redrawTabs(); ta.placeholder = m.ph; syncModel(); }
       }, h('span', {}, m.icon), m.label));
     }
@@ -99,10 +108,24 @@ export function render(root, params = {}) {
     composer.querySelector('.composer-actions span').textContent = ta.value.length;
   });
 
+  /* 创作入口四宫格 */
+  const entryGrid = h('div', { class: 'entry-grid' },
+    ...ENTRIES.map(e => h('button', { class: 'entry-tile', onclick: () => {
+      if (e.k === 'agent') return runAgent();
+      if (e.k === 'studio') return go('studio');
+      mode = e.k; redrawTabs(); ta.placeholder = MODES.find(m => m.k === e.k).ph; syncModel();
+      ta.focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    } },
+      h('div', { class: 'entry-icon' }, e.icon),
+      h('div', { class: 'entry-label' }, e.label),
+      h('div', { class: 'entry-desc' }, e.desc)
+    ))
+  );
+
   const chips = h('div', { class: 'chip-row' },
     ...IDEAS.map(t => h('button', { class: 'chip', onclick: () => { ta.value = t; ta.focus(); } }, t)));
 
-  /* 作品流 */
+  /* 发现区 */
   const works = store.list('works');
   const flow = works.length
     ? h('div', { class: 'flow-grid' }, ...works.slice(0, 8).map(w => workCard(w)))
@@ -110,20 +133,25 @@ export function render(root, params = {}) {
 
   root.append(h('div', { class: 'home' },
     h('div', { class: 'home-hero' },
-      h('h1', { class: 'home-title' }, '把想法交给它，', h('em', {}, '剩下的交给画布')),
-      h('div', { class: 'home-desc' }, '接入你自己的模型，剧本 · 分镜 · 图像 · 视频，全部在同一块画布上完成')
+      h('h1', { class: 'home-title' }, '释放你的创造力，', h('br', {}), '即刻将创意变为现实！'),
+      h('div', { class: 'home-desc' }, '输入想法或剧本，上传参考，和林的视频工作台一起创作')
     ),
     composer,
+    entryGrid,
     chips,
     h('div', { class: 'home-flow' },
       h('div', { class: 'section-title' },
-        works.length ? '最近作品' : '灵感广场',
-        h('span', { class: 'tag' }, works.length ? `${works.length} 个` : '示例')),
+        works.length ? '最近作品' : '发现',
+        h('span', { class: 'tag' }, works.length ? `${works.length} 个` : '热门'),
+        h('a', { class: 'flow-link', onclick: () => go('series') }, '上传短剧')),
+      h('div', { class: 'cat-row' },
+        ...CATS.map(c => h('button', { class: 'cat-chip' }, c))),
       flow
     )
   ));
 
   async function runAgent(prompt) {
+    prompt = prompt || ta.value.trim();
     if (!prompt) return toast('说点什么吧', 'err');
     const defaultProvider = providers.defaultOf('text');
     if (!defaultProvider) return toast('还没接入文本模型，去「模型接入」配置', 'err');
