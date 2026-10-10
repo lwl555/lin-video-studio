@@ -1,5 +1,6 @@
 /* ============ 模型接入 & 设置 ============ */
 import { h, $, toast, modal, confirm, download, imgErr } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, auth, uid, ADMIN } from '../store.js';
 import { providers, PRESETS, TYPE_LABEL, testProvider } from '../models.js';
 import { usageReport, clearOldest, clearKind, clearAllMedia, compressAllImages, fmtMB, fmtKB } from '../storage.js';
@@ -29,7 +30,7 @@ export function render(root) {
     listBox.innerHTML = '';
     const all = providers.all();
     if (!all.length) {
-      listBox.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, '🔌'),
+      listBox.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('plug', 40) }),
         '还没有接入任何模型', h('div', { class: 'hint' }, '点上面的预设，或点下面「自定义接入」')));
     }
     for (const p of all) {

@@ -1,5 +1,6 @@
 /* ============ 剧情短片 · 六阶段流水线 ============ */
 import { h, $, toast, download, pickFile } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, uid } from '../store.js';
 import { providers, chat, genImage, genVideo } from '../models.js';
 import { go } from '../app.js';
@@ -125,7 +126,7 @@ function renderProject(root, proj) {
     [...chars.map(c => ({ ...c, kind: '角色' })), ...scenes.map(c => ({ ...c, kind: '场景' }))].forEach(c => {
       const imgBox = h('div', { style: { width: '100%', aspectRatio: '1', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' } });
       if (c.image) imgBox.append(h('img', { src: c.image, style: { width: '100%', height: '100%', objectFit: 'cover' } }));
-      else imgBox.append(h('span', { style: { color: 'var(--txt-3)', fontSize: '20px' } }, '🖼️'));
+      else imgBox.append(h('span', { class: 'ico', html: icon('image', 28) }));
       const btn = h('button', { class: 'node-btn', style: { marginTop: '8px' }, onclick: async e => {
         e.currentTarget.disabled = true; e.currentTarget.textContent = '生成中…';
         try {
@@ -168,7 +169,7 @@ function renderProject(root, proj) {
             h('span', { class: 'tag' }, s.shot || '中景'),
             h('span', { class: 'tag' }, s.camera || '静止'),
             h('span', { class: 'tag' }, (s.dur || 5) + 's'),
-            s.dialogue ? h('span', { class: 'tag' }, '🗣 ' + s.dialogue.slice(0, 16)) : null)),
+            s.dialogue ? h('span', { class: 'tag' }, h('span', { class: 'ico', html: icon('chat', 12) }), ' ' + s.dialogue.slice(0, 16)) : null)),
         h('div', { class: 'shot-side' },
           h('div', { class: 'shot-frame' }, s.frame ? h('img', { src: s.frame }) : h('div', { class: 'stage-ph', style: { fontSize: '11px' } }, '待生成')))));
     });
@@ -255,7 +256,7 @@ function renderProject(root, proj) {
       const f = await pickFile('audio/*'); if (!f) return;
       bgmUrl = URL.createObjectURL(f);
       bgmSlot.innerHTML = '';
-      bgmSlot.append(h('span', { style: { fontSize: '11px', padding: '4px' } }, '🎵 ' + f.name.slice(0, 12)));
+      bgmSlot.append(h('span', { style: { fontSize: '11px', padding: '4px' } }, h('span', { class: 'ico', html: icon('music', 12) }), ' ' + f.name.slice(0, 12)));
     } }, h('span', { style: { fontSize: '16px' } }, '＋'), h('span', {}, '背景音'));
 
     content.append(h('div', { class: 'card', style: { padding: '16px', marginTop: '14px' } },

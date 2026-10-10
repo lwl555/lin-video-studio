@@ -1,21 +1,22 @@
 /* ============ 首页 · 创作广场（对齐 Pavo 布局） ============ */
 import { h, $, toast, pickFile, modelChip, timeAgo } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, saveMedia, uid } from '../store.js';
 import { providers, chat } from '../models.js';
 import { go } from '../app.js';
 
 const MODES = [
-  { k: 'image', label: '图片生成', icon: '🖼️', ph: '上传参考素材，输入文字，请描述你想生成的图片' },
-  { k: 'video', label: '视频生成', icon: '🎬', ph: '上传参考素材（首帧 / 尾帧），输入文字，请描述你想生成的视频' },
-  { k: 'studio', label: '剧情短片', icon: '🎞️', ph: '一句话故事创意。例如：现代外卖员意外穿越到古代皇宫，被误认成御厨，情急之下做了一碗蛋炒饭。' },
-  { k: 'agent', label: 'Agent 对话', icon: '✨', ph: '直接说需求。例如：帮我把这段故事拆成 6 个分镜，标出景别和运镜。' }
+  { k: 'image', label: '图片生成', icon: 'image', ph: '上传参考素材，输入文字，请描述你想生成的图片' },
+  { k: 'video', label: '视频生成', icon: 'video', ph: '上传参考素材（首帧 / 尾帧），输入文字，请描述你想生成的视频' },
+  { k: 'studio', label: '剧情短片', icon: 'film', ph: '一句话故事创意。例如：现代外卖员意外穿越到古代皇宫，被误认成御厨，情急之下做了一碗蛋炒饭。' },
+  { k: 'agent', label: 'Agent 对话', icon: 'agent', ph: '直接说需求。例如：帮我把这段故事拆成 6 个分镜，标出景别和运镜。' }
 ];
 
 const ENTRIES = [
-  { k: 'image', label: '图片生成', icon: '🖼️', desc: '多模型可选，支持商业海报、电商视觉、人物写真与风格化编辑' },
-  { k: 'video', label: '视频生成', icon: '🎬', desc: '文生视频 / 图生视频，多种画幅与清晰度' },
-  { k: 'studio', label: '剧情短片', icon: '🎞️', desc: '从剧本到成片，全流程自动生成' },
-  { k: 'agent', label: 'Agent', icon: '✨', desc: '一句话下达复合创作指令，自动拆解并执行' }
+  { k: 'image', label: '图片生成', icon: 'image', desc: '多模型可选，支持商业海报、电商视觉、人物写真与风格化编辑' },
+  { k: 'video', label: '视频生成', icon: 'video', desc: '文生视频 / 图生视频，多种画幅与清晰度' },
+  { k: 'studio', label: '剧情短片', icon: 'film', desc: '从剧本到成片，全流程自动生成' },
+  { k: 'agent', label: 'Agent', icon: 'agent', desc: '一句话下达复合创作指令，自动拆解并执行' }
 ];
 
 const CATS = ['娱乐短片', '创意图片', '科幻特效', '萌宠', '全民唱跳', '营销素材', 'Summer Breeze'];
@@ -67,7 +68,7 @@ export function render(root, params = {}) {
       modeTabs.append(h('button', {
         class: 'ctab' + (m.k === mode ? ' active' : ''),
         onclick: () => { mode = m.k; redrawTabs(); ta.placeholder = m.ph; syncModel(); }
-      }, h('span', {}, m.icon), m.label));
+      }, h('span', { html: icon(m.icon, 16) }), m.label));
     }
   };
   redrawTabs();
@@ -116,7 +117,7 @@ export function render(root, params = {}) {
       mode = e.k; redrawTabs(); ta.placeholder = MODES.find(m => m.k === e.k).ph; syncModel();
       ta.focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
     } },
-      h('div', { class: 'entry-icon' }, e.icon),
+      h('div', { class: 'entry-icon', html: icon(e.icon, 22) }),
       h('div', { class: 'entry-label' }, e.label),
       h('div', { class: 'entry-desc' }, e.desc)
     ))
@@ -176,8 +177,8 @@ export function render(root, params = {}) {
 
 function workCard(w) {
   const thumb = w.type === 'video'
-    ? (w.cover || w.url ? h('video', { src: w.url || w.cover, muted: true, playsinline: true }) : h('div', { class: 'flow-ph' }, '🎬'))
-    : (w.url ? h('img', { src: w.url, loading: 'lazy' }) : h('div', { class: 'flow-ph' }, '🖼️'));
+    ? (w.cover || w.url ? h('video', { src: w.url || w.cover, muted: true, playsinline: true }) : h('div', { class: 'flow-ph', html: icon('video', 36) }))
+    : (w.url ? h('img', { src: w.url, loading: 'lazy' }) : h('div', { class: 'flow-ph', html: icon('image', 36) }));
   return h('div', { class: 'flow-card', onclick: () => go('works') },
     h('div', { class: 'flow-thumb' }, thumb, h('span', { class: 'flow-badge' }, w.type === 'video' ? '视频' : '图片')),
     h('div', { class: 'flow-body' },
@@ -187,17 +188,17 @@ function workCard(w) {
 }
 
 const SAMPLE = [
-  { t: '折梅听风 · 古风一镜到底', tag: '短剧', emoji: '🌸', meta: '9:16 · 12s' },
-  { t: '御膳房来了个外卖员', tag: '轻喜剧', emoji: '🍚', meta: '16:9 · 30s' },
-  { t: '海边露营 · 蓝调时刻', tag: '氛围片', emoji: '🏕️', meta: '16:9 · 8s' },
-  { t: '雨夜中式茶馆', tag: '广告', emoji: '🌧️', meta: '9:16 · 15s' },
-  { t: '云上天宫 · 仙侠开场', tag: '短剧', emoji: '☁️', meta: '16:9 · 10s' },
-  { t: '像素风 · 闯关小剧场', tag: '动画', emoji: '👾', meta: '1:1 · 6s' },
-  { t: '产品开箱 · 竖屏种草', tag: '电商', emoji: '📦', meta: '9:16 · 20s' },
-  { t: '水墨国风 · 山雨欲来', tag: '国风', emoji: '🏔️', meta: '16:9 · 9s' }
+  { t: '折梅听风 · 古风一镜到底', tag: '短剧', ic: 'video', meta: '9:16 · 12s' },
+  { t: '御膳房来了个外卖员', tag: '轻喜剧', ic: 'video', meta: '16:9 · 30s' },
+  { t: '海边露营 · 蓝调时刻', tag: '氛围片', ic: 'video', meta: '16:9 · 8s' },
+  { t: '雨夜中式茶馆', tag: '广告', ic: 'video', meta: '9:16 · 15s' },
+  { t: '云上天宫 · 仙侠开场', tag: '短剧', ic: 'video', meta: '16:9 · 10s' },
+  { t: '像素风 · 闯关小剧场', tag: '动画', ic: 'video', meta: '1:1 · 6s' },
+  { t: '产品开箱 · 竖屏种草', tag: '电商', ic: 'video', meta: '9:16 · 20s' },
+  { t: '水墨国风 · 山雨欲来', tag: '国风', ic: 'video', meta: '16:9 · 9s' }
 ];
 function sampleCard(s) {
   return h('div', { class: 'flow-card' },
-    h('div', { class: 'flow-thumb' }, h('div', { class: 'flow-ph' }, s.emoji), h('span', { class: 'flow-badge' }, s.tag)),
+    h('div', { class: 'flow-thumb' }, h('div', { class: 'flow-ph', html: icon(s.ic, 36) }), h('span', { class: 'flow-badge' }, s.tag)),
     h('div', { class: 'flow-body' }, h('div', { class: 'flow-title' }, s.t), h('div', { class: 'flow-meta' }, s.meta)));
 }

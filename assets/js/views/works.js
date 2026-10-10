@@ -1,5 +1,6 @@
 /* ============ 作品库 ============ */
 import { h, toast, download, confirm, timeAgo } from '../ui.js';
+import { icon } from '../icons.js';
 import { store } from '../store.js';
 
 export function render(root, params = {}) {
@@ -30,7 +31,7 @@ export function render(root, params = {}) {
     grid.innerHTML = '';
     if (!list.length) {
       grid.append(h('div', { class: 'empty', style: { gridColumn: '1/-1' } },
-        h('div', { class: 'empty-icon' }, '🗂️'), q ? `没有匹配「${q}」的作品` : '还没有作品，去首页创作吧'));
+        h('div', { class: 'empty-icon', html: icon('grid', 40) }), q ? `没有匹配「${q}」的作品` : '还没有作品，去首页创作吧'));
       return;
     }
     for (const w of list) {

@@ -2,7 +2,7 @@
 
 /* 素材被清理后的占位图 + img 兜底 */
 export const IMG_PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="#F2F3F5"/><text x="160" y="92" font-size="30" text-anchor="middle" fill="#C3C8D2">🖼️</text><text x="160" y="128" font-size="13" text-anchor="middle" fill="#AEB4BF" font-family="sans-serif">素材已清理（元数据保留）</text></svg>'
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="#F2F3F5"/><svg x="140" y="34" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#C3C8D2" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><circle cx="8.5" cy="9.7" r="1.6" fill="#C3C8D2" stroke="none"/><path d="M3.9 16.7l4.5-4.5a1.3 1.3 0 011.85 0l3 3"/><path d="M12.4 16.1l2.1-2.1a1.3 1.3 0 011.85 0l3.75 3.75"/></svg><text x="160" y="128" font-size="13" text-anchor="middle" fill="#AEB4BF" font-family="sans-serif">素材已清理（元数据保留）</text></svg>'
 );
 export function imgErr(e) {
   const t = e.target;

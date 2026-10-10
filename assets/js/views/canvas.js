@@ -1,5 +1,6 @@
 /* ============ 无限画布 ============ */
 import { h, $, $$, toast, ctxMenu, modal, confirm, pickFile, modelChip, timeAgo, download } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, uid, saveMedia } from '../store.js';
 import { providers, chat, genImage, genVideo } from '../models.js';
 import { openDirector } from '../director.js';
@@ -35,13 +36,13 @@ export function renderList(root) {
       const first = p.nodes?.find(n => n.media?.url);
       return h('div', { class: 'flow-card', onclick: () => go('canvas-edit', { id: p.id }) },
         h('div', { class: 'flow-thumb' },
-          first ? h('img', { src: first.media.url }) : h('div', { class: 'flow-ph' }, '🎨'),
+          first ? h('img', { src: first.media.url }) : h('div', { class: 'flow-ph', html: icon('canvas', 30) }),
           h('span', { class: 'flow-badge' }, `${p.nodes?.length || 0} 节点`)),
         h('div', { class: 'flow-body' },
           h('div', { class: 'flow-title' }, p.name),
           h('div', { class: 'flow-meta' }, '更新于 ' + timeAgo(p.updatedAt || p.createdAt))));
     }))
-    : h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, '🎨'), '还没有画布项目，点右上角新建一个');
+    : h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('canvas', 40) }), '还没有画布项目，点右上角新建一个');
 
   root.append(h('div', { class: 'page' },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
@@ -330,7 +331,7 @@ export function renderEditor(root, params) {
       body.append(ta);
       actions.append(
         h('button', { class: 'node-btn primary', onclick: () => run(node, refresh) },
-          h('span', { html: '✦' }), '生成'),
+          h('span', { class: 'ico', html: icon('spark', 14) }), '生成'),
         h('button', { class: 'node-btn', onclick: () => { ta.value = ''; node.prompt = ''; } }, '清空')
       );
     }

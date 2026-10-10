@@ -1,5 +1,6 @@
 /* ============ 图片生成工作区 ============ */
 import { h, $, toast, pickFile, modelSelect, download } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, uid, saveMedia } from '../store.js';
 import { providers, genImage } from '../models.js';
 import { go } from '../app.js';
@@ -29,7 +30,7 @@ export function render(root, params = {}) {
   drawRef();
 
   const stage = h('div', { class: 'stage-box' }, h('div', { class: 'stage-ph' },
-    h('span', { class: 'big' }, '🖼️'), '生成结果会显示在这里'));
+    h('span', { class: 'big', html: icon('image', 34) }), '生成结果会显示在这里'));
   const strip = h('div', { class: 'result-strip' });
 
   const styleRow = h('div', { class: 'ratio-row' });
@@ -77,7 +78,7 @@ export function render(root, params = {}) {
       drawStrip();
       toast('生成完成', 'ok');
     } catch (e) {
-      stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'big' }, '⚠️'), e.message));
+      stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'big', html: icon('warn', 34) }), e.message));
       toast('失败：' + e.message, 'err', 4500);
     } finally { genBtn.disabled = false; genBtn.textContent = '生成图片'; }
   }

@@ -1,5 +1,6 @@
 /* ============ 视频生成工作区 ============ */
 import { h, $, toast, pickFile, modelSelect, download } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, uid, saveMedia } from '../store.js';
 import { providers, genVideo } from '../models.js';
 import { go } from '../app.js';
@@ -46,7 +47,7 @@ export function render(root, params = {}) {
     }
   }, d + 's')));
 
-  const stage = h('div', { class: 'stage-box' }, h('div', { class: 'stage-ph' }, h('span', { class: 'big' }, '🎬'), '生成的视频会在这里播放'));
+  const stage = h('div', { class: 'stage-box' }, h('div', { class: 'stage-ph' }, h('span', { class: 'big', html: icon('video', 34) }), '生成的视频会在这里播放'));
   const strip = h('div', { class: 'result-strip' });
   const statusLine = h('div', { class: 'hint', style: { textAlign: 'center', marginTop: '12px' } }, '');
 
@@ -82,7 +83,7 @@ export function render(root, params = {}) {
       store.add('works', { id: uid('w'), title: (prompt || '视频').slice(0, 24), type: 'video', url: r.url, createdAt: Date.now() });
       drawStrip(); toast('生成完成', 'ok');
     } catch (e) {
-      stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'big' }, '⚠️'), e.message));
+      stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'big', html: icon('warn', 34) }), e.message));
       statusLine.textContent = ''; toast('失败：' + e.message, 'err', 4500);
     } finally { genBtn.disabled = false; genBtn.textContent = '生成视频'; }
   }

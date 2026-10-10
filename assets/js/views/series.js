@@ -1,5 +1,6 @@
 /* ============ 短剧剧场 ============ */
 import { h, toast, timeAgo, confirm } from '../ui.js';
+import { icon } from '../icons.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 
@@ -17,7 +18,7 @@ export function render(root) {
       h('button', { class: 'btn-primary', onclick: () => go('studio') }, '＋ 新建短剧'))));
 
   if (!list.length) {
-    page.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, '🎞️'),
+    page.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('film', 40) }),
       '还没有短剧项目', h('div', { style: { marginTop: '14px' } },
         h('button', { class: 'btn-primary', onclick: () => go('studio') }, '用一句话开始'))));
     return;
@@ -30,7 +31,7 @@ export function render(root) {
     const pct = shots ? Math.round((videos / shots) * 100) : 0;
     page.append(h('div', { class: 'card', style: { padding: '16px', marginBottom: '12px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px' } },
-        h('div', { class: 'list-cover' }, s.storyboard?.find(x => x.frame) ? h('img', { src: s.storyboard.find(x => x.frame).frame }) : h('div', { class: 'flow-ph' }, '🎬')),
+        h('div', { class: 'list-cover' }, s.storyboard?.find(x => x.frame) ? h('img', { src: s.storyboard.find(x => x.frame).frame }) : h('div', { class: 'flow-ph', html: icon('video', 36) })),
         h('div', { class: 'list-main' },
           h('div', { class: 'list-title' }, s.req?.title || s.logline?.slice(0, 20) || '未命名短剧'),
           h('div', { class: 'list-meta' }, `${shots} 个分镜 · 关键帧 ${frames} · 片段 ${videos} · ${timeAgo(s.createdAt)}`),

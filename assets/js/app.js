@@ -1,6 +1,7 @@
 /* ============ 应用入口：认证 + 路由 ============ */
 import { store, auth, ADMIN } from './store.js';
 import { $, $$, toast, h } from './ui.js';
+import { icon } from './icons.js';
 import { usageReport } from './storage.js';
 import * as Home from './views/home.js';
 import * as Canvas from './views/canvas.js';
@@ -91,7 +92,7 @@ export function go(route, params = {}) {
     ROUTES[route](view, params);
   } catch (e) {
     console.error(e);
-    view.innerHTML = `<div class="page"><div class="empty"><div class="empty-icon">⚠️</div>页面出错：${e.message}</div></div>`;
+    view.innerHTML = `<div class="page"><div class="empty"><div class="empty-icon">${icon('warn', 40)}</div>页面出错：${e.message}</div></div>`;
   }
 }
 window.__go = go;

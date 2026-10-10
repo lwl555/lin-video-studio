@@ -1,5 +1,6 @@
 /* ============ 资产库 ============ */
 import { h, $, toast, pickFile, modal, confirm, download, timeAgo } from '../ui.js';
+import { icon } from '../icons.js';
 import { store, uid, saveMedia } from '../store.js';
 
 const TYPES = { all: '全部', character: '角色', scene: '场景', prop: '道具' };
@@ -28,7 +29,7 @@ export function render(root) {
     grid.innerHTML = '';
     if (!list.length) {
       grid.append(h('div', { class: 'empty', style: { gridColumn: '1/-1' } },
-        h('div', { class: 'empty-icon' }, '🧩'), '还没有资产。在画布或剧情短片里点「存为资产」即可沉淀。'));
+        h('div', { class: 'empty-icon', html: icon('layers', 40) }), '还没有资产。在画布或剧情短片里点「存为资产」即可沉淀。'));
       return;
     }
     for (const a of list) {
