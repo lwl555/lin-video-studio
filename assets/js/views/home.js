@@ -130,7 +130,7 @@ export function render(root, params = {}) {
   const works = store.list('works');
   const flow = works.length
     ? h('div', { class: 'flow-grid' }, ...works.slice(0, 8).map(w => workCard(w)))
-    : h('div', { class: 'flow-grid' }, ...SAMPLE.map(s => sampleCard(s)));
+    : h('div', { class: 'flow-grid' }, ...PRESETS.map(s => presetCard(s)));
 
   root.append(h('div', { class: 'home' },
     h('div', { class: 'home-hero' },
@@ -142,9 +142,9 @@ export function render(root, params = {}) {
     chips,
     h('div', { class: 'home-flow' },
       h('div', { class: 'section-title' },
-        works.length ? '最近作品' : '发现',
-        h('span', { class: 'tag' }, works.length ? `${works.length} 个` : '热门'),
-        h('a', { class: 'flow-link', onclick: () => go('series') }, '上传短剧')),
+        works.length ? '最近作品' : '灵感预设',
+        h('span', { class: 'tag' }, works.length ? `${works.length} 个` : `${PRESETS.length} 个可直接跑`),
+        h('a', { class: 'flow-link', onclick: () => go('inspire') }, '更多灵感')),
       h('div', { class: 'cat-row' },
         ...CATS.map(c => h('button', { class: 'cat-chip' }, c))),
       flow
@@ -187,18 +187,48 @@ function workCard(w) {
   );
 }
 
-const SAMPLE = [
-  { t: '折梅听风 · 古风一镜到底', tag: '短剧', ic: 'video', meta: '9:16 · 12s' },
-  { t: '御膳房来了个外卖员', tag: '轻喜剧', ic: 'video', meta: '16:9 · 30s' },
-  { t: '海边露营 · 蓝调时刻', tag: '氛围片', ic: 'video', meta: '16:9 · 8s' },
-  { t: '雨夜中式茶馆', tag: '广告', ic: 'video', meta: '9:16 · 15s' },
-  { t: '云上天宫 · 仙侠开场', tag: '短剧', ic: 'video', meta: '16:9 · 10s' },
-  { t: '像素风 · 闯关小剧场', tag: '动画', ic: 'video', meta: '1:1 · 6s' },
-  { t: '产品开箱 · 竖屏种草', tag: '电商', ic: 'video', meta: '9:16 · 20s' },
-  { t: '水墨国风 · 山雨欲来', tag: '国风', ic: 'video', meta: '16:9 · 9s' }
+/* 灵感预设：缩略图是平台真实生成过的图，提示词与尺寸都是可直接跑的真参数。
+   点一下 = 建一个带好提示词的画布项目，进去按「生成」就能出结果（不再是空壳示例）。 */
+const PRESETS = [
+  { t: '写实电影感 · 雨夜霓虹小巷', tag: '图片', img: 'assets/style/cinematic.jpg', size: '1536x864',
+    prompt: '一位穿风衣的女子站在雨夜的霓虹小巷里，湿地面倒映着霓虹灯，35mm 电影感，浅景深，胶片颗粒' },
+  { t: '2D 动漫 · 放学后的天台', tag: '图片', img: 'assets/style/anime.jpg', size: '864x1536',
+    prompt: '放学后的学校天台，长发少女靠在栏杆上望着夕阳，动漫赛璐璐上色，暖色调，干净线稿' },
+  { t: '3D 渲染 · 治愈系小机器人', tag: '图片', img: 'assets/style/3d.jpg', size: '1024x1024',
+    prompt: '一只圆滚滚的可爱小机器人朝镜头挥手，柔和影棚光，皮克斯质感 3D 渲染，干净浅色背景' },
+  { t: '国风水墨 · 山雨欲来', tag: '图片', img: 'assets/style/ink.jpg', size: '1536x864',
+    prompt: '水墨山水，层叠远山与江面一叶小舟，大面积留白，宣纸质感，淡彩' },
+  { t: '美式漫画 · 城市屋顶', tag: '图片', img: 'assets/style/comic.jpg', size: '1024x1024',
+    prompt: '超级英雄站在城市屋顶俯瞰天际线，粗黑描边，网点印刷感，平涂饱和色' },
+  { t: '像素风 · 奇幻酒馆', tag: '图片', img: 'assets/style/pixel.jpg', size: '1024x1024',
+    prompt: '16-bit 像素风奇幻酒馆内部，壁炉火光，等距视角，有限色板，颗粒清晰' },
+  { t: '儿童插画 · 森林里的小狐狸', tag: '图片', img: 'assets/style/kids.jpg', size: '1024x1024',
+    prompt: '秋日森林里一只微笑的小狐狸在树下读书，柔和水彩，暖色治愈，绘本插画' },
+  { t: '赛博朋克 · 霓虹夜街', tag: '图片', img: 'assets/style/cyberpunk.jpg', size: '1536x864',
+    prompt: '赛博朋克夜街，霓虹招牌，雨后积水倒影，飞行器掠过，品红与青高对比' }
 ];
-function sampleCard(s) {
-  return h('div', { class: 'flow-card' },
-    h('div', { class: 'flow-thumb' }, h('div', { class: 'flow-ph', html: icon(s.ic, 36) }), h('span', { class: 'flow-badge' }, s.tag)),
-    h('div', { class: 'flow-body' }, h('div', { class: 'flow-title' }, s.t), h('div', { class: 'flow-meta' }, s.meta)));
+
+function presetCard(s) {
+  return h('div', { class: 'flow-card', onclick: () => usePreset(s) },
+    h('div', { class: 'flow-thumb' },
+      h('img', { src: s.img, alt: s.t, loading: 'lazy' }),
+      h('span', { class: 'flow-badge' }, s.tag),
+      h('span', { class: 'flow-use' }, '一键建画布')),
+    h('div', { class: 'flow-body' },
+      h('div', { class: 'flow-title' }, s.t),
+      h('div', { class: 'flow-meta' }, s.size.replace('x', '×'))));
+}
+
+/* 按预设建一个「描述 → 图片」两节点画布，提示词和尺寸都填好，进去直接能跑 */
+function usePreset(s) {
+  const text = { id: uid('n'), type: 'text', x: 120, y: 200, title: '创意描述', prompt: s.prompt, content: s.prompt, media: null };
+  const img = { id: uid('n'), type: 'image', x: 560, y: 200, title: s.t, prompt: s.prompt, content: '', media: null, size: s.size };
+  const p = {
+    id: uid('pj'), name: s.t, nodes: [text, img],
+    edges: [{ id: uid('e'), from: text.id, to: img.id }],
+    viewport: { x: 60, y: 40, zoom: 1 }, createdAt: Date.now(), updatedAt: Date.now()
+  };
+  store.add('projects', p);
+  go('canvas-edit', { id: p.id });
+  toast('已按预设建好画布，点图片节点的「生成」就能出图', 'ok', 3600);
 }

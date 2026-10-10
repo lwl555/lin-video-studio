@@ -5,13 +5,24 @@ import { store, uid, saveMedia } from '../store.js';
 import { providers, genImage } from '../models.js';
 import { go } from '../app.js';
 
-const STYLES = ['写实电影感', '2D 动漫', '3D 渲染', '国风水墨', '美式漫画', '像素风', '儿童插画', '赛博朋克'];
+/* 风格：缩略图是平台真实生成过的样图（点开就是这张图的效果），kw 是真正喂给模型的英文提示词 */
+const STYLES = [
+  { k: 'none', label: '不指定', img: '', kw: '' },
+  { k: 'cinematic', label: '写实电影感', img: 'assets/style/cinematic.jpg', kw: 'cinematic film still, photorealistic, 35mm lens, shallow depth of field, film grain' },
+  { k: 'anime', label: '2D 动漫', img: 'assets/style/anime.jpg', kw: 'anime style illustration, cel shading, vibrant colors, clean lineart' },
+  { k: '3d', label: '3D 渲染', img: 'assets/style/3d.jpg', kw: '3d render, pixar style, soft studio lighting, octane render' },
+  { k: 'ink', label: '国风水墨', img: 'assets/style/ink.jpg', kw: 'traditional chinese ink wash painting, rice paper texture, negative space' },
+  { k: 'comic', label: '美式漫画', img: 'assets/style/comic.jpg', kw: 'american comic book style, bold outlines, halftone dots, flat saturated colors' },
+  { k: 'pixel', label: '像素风', img: 'assets/style/pixel.jpg', kw: 'pixel art, 16-bit, limited palette, crisp pixels' },
+  { k: 'kids', label: '儿童插画', img: 'assets/style/kids.jpg', kw: "children's book illustration, soft watercolor, pastel warm colors, whimsical" },
+  { k: 'cyberpunk', label: '赛博朋克', img: 'assets/style/cyberpunk.jpg', kw: 'cyberpunk, neon lights, rain, high contrast magenta and cyan' }
+];
 const SIZES = ['1024x1024', '1536x864', '864x1536', '1280x720', '720x1280', '2048x2048'];
 
 export function render(root, params = {}) {
   const list = providers.byType('image');
   let providerId = list[0]?.id || '';
-  let refUrl = null, size = '1024x1024', style = STYLES[0];
+  let refUrl = null, size = '1024x1024', style = STYLES[1];   /* 默认「写实电影感」 */
   const results = [];
 
   const ta = h('textarea', { class: 'form-area', placeholder: '描述画面：主体 + 场景 + 光线 + 风格，越具体越好' });
@@ -33,12 +44,23 @@ export function render(root, params = {}) {
     h('span', { class: 'big', html: icon('image', 34) }), '生成结果会显示在这里'));
   const strip = h('div', { class: 'result-strip' });
 
-  const styleRow = h('div', { class: 'ratio-row' });
-  STYLES.forEach((s, i) => styleRow.append(h('button', {
-    class: 'ratio-btn' + (i === 0 ? ' active' : ''), onclick: e => {
-      style = s; [...styleRow.children].forEach(c => c.classList.toggle('active', c === e.currentTarget));
+  /* 风格：缩略图卡片（真实样图），不再是一排纯文字 */
+  const styleRow = h('div', { class: 'style-tiles' });
+  const drawStyles = () => {
+    styleRow.innerHTML = '';
+    for (const s of STYLES) {
+      styleRow.append(h('button', {
+        class: 'style-tile' + (s.k === style.k ? ' active' : ''),
+        title: s.label,
+        onclick: () => { style = s; drawStyles(); }
+      },
+        s.img
+          ? h('img', { src: s.img, alt: s.label, loading: 'lazy' })
+          : h('span', { class: 'style-none' }, '不指定风格'),
+        h('span', { class: 'style-name' }, s.label)));
     }
-  }, s)));
+  };
+  drawStyles();
 
   const sizeRow = h('div', { class: 'ratio-row' });
   SIZES.forEach((s, i) => sizeRow.append(h('button', {
@@ -68,19 +90,40 @@ export function render(root, params = {}) {
     if (!p) { toast('还没接入图像模型，去「模型接入」添加', 'err'); return go('settings'); }
     const prompt = ta.value.trim();
     if (!prompt) return toast('先写点画面描述', 'err');
+    const t0 = Date.now();
     genBtn.disabled = true; genBtn.textContent = '生成中…';
-    stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'spinner', style: { margin: '0 auto 12px' } }), '正在生成…'));
+    /* 阶段提示 + 进度条 + 已等待秒数，不再是干巴巴一句「正在生成」 */
+    const paint = (txt, pct) => {
+      stage.innerHTML = '';
+      stage.append(h('div', { class: 'stage-ph' },
+        h('span', { class: 'spinner', style: { margin: '0 auto 12px' } }),
+        h('div', { class: 'stage-txt' }, txt),
+        h('div', { class: 'ws-bar' }, h('i', { style: { width: Math.max(8, Math.min(96, pct || 8)) + '%' } })),
+        h('span', { class: 'ws-time' }, '已等待 0s')));
+    };
+    paint('提交画面…', 18);
+    let sec = 0;
+    const timer = setInterval(() => {
+      sec++;
+      const t = stage.querySelector('.ws-time');
+      if (t) t.textContent = `已等待 ${sec}s`;
+    }, 1000);
     try {
-      const r = await genImage(`${prompt}，${style}`, { provider: p, size, images: refUrl ? [refUrl] : [] });
+      /* 风格用英文关键词喂给模型（比中文标签稳），不指定时不拼 */
+      const full = style.kw ? `${prompt}，${style.kw}` : prompt;
+      const r = await genImage(full, { provider: p, size, images: refUrl ? [refUrl] : [] });
       results.unshift(r.url);
       stage.innerHTML = ''; stage.append(h('img', { src: r.url }));
       store.add('works', { id: uid('w'), title: prompt.slice(0, 24), type: 'image', url: r.url, createdAt: Date.now() });
       drawStrip();
-      toast('生成完成', 'ok');
+      toast(`生成完成 · ${((Date.now() - t0) / 1000).toFixed(1)}s`, 'ok');
     } catch (e) {
       stage.innerHTML = ''; stage.append(h('div', { class: 'stage-ph' }, h('span', { class: 'big', html: icon('warn', 34) }), e.message));
       toast('失败：' + e.message, 'err', 4500);
-    } finally { genBtn.disabled = false; genBtn.textContent = '生成图片'; }
+    } finally {
+      clearInterval(timer);
+      genBtn.disabled = false; genBtn.textContent = '生成图片';
+    }
   }
 
   function drawStrip() {

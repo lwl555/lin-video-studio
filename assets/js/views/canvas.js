@@ -197,6 +197,10 @@ export function renderEditor(root, params) {
   const edgeLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   edgeLayer.setAttribute('class', 'edges');
   stage.append(edgeLayer);
+  /* 拖拽中的预览线单独一层：这样任何一次连线重绘都不会把预览线冲掉（旧版就是被冲掉才显得卡） */
+  const linkLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  linkLayer.setAttribute('class', 'edges link-layer');
+  stage.append(linkLayer);
 
   function portPos(node, side) {
     const el = nodeEls.get(node.id); if (!el) return null;
@@ -204,7 +208,26 @@ export function renderEditor(root, params) {
     return side === 'out' ? { x: node.x + w, y: node.y + hh / 2 } : { x: node.x, y: node.y + hh / 2 };
   }
   const SVGNS = 'http://www.w3.org/2000/svg';
+  /* 贝塞尔在 t=0.5 处的点（用于把删除按钮放到连线中点） */
+  function bezMid(p1, p2, dx) {
+    const c1x = p1.x + dx, c2x = p2.x - dx;
+    return {
+      x: (p1.x + 3 * c1x + 3 * c2x + (p2.x - 2)) / 8,
+      y: (4 * p1.y + 4 * p2.y) / 8
+    };
+  }
+  function removeEdge(id) {
+    pushUndo();
+    proj.edges = proj.edges.filter(e => e.id !== id);
+    drawEdges(); scheduleMinimap(); save();
+    toast('已删除连线', 'ok', 1200);
+  }
+  let edgeRaf = 0;
   function drawEdges() {
+    if (edgeRaf) cancelAnimationFrame(edgeRaf);
+    edgeRaf = requestAnimationFrame(() => { edgeRaf = 0; drawEdgesNow(); });
+  }
+  function drawEdgesNow() {
     edgeLayer.innerHTML = '';
     /* 连线箭头（Pavo 风格） */
     const defs = document.createElementNS(SVGNS, 'defs');
@@ -225,11 +248,34 @@ export function renderEditor(root, params) {
       const p1 = portPos(a, 'out'), p2 = portPos(b, 'in'); if (!p1 || !p2) continue;
       const dx = Math.max(40, Math.abs(p2.x - p1.x) * 0.45);
       const d = `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x - 2},${p2.y}`;
+
+      const g = document.createElementNS(SVGNS, 'g');
+      g.setAttribute('class', 'edge-g');
+
+      /* 加粗透明命中线：只负责「让细线好悬停」，不直接删（避免误删） */
+      const hit = document.createElementNS(SVGNS, 'path');
+      hit.setAttribute('class', 'edge-hit');
+      hit.setAttribute('d', d);
+
       const path = document.createElementNS(SVGNS, 'path');
       path.setAttribute('class', 'edge');
       path.setAttribute('d', d);
       path.setAttribute('marker-end', 'url(#earrow)');
-      edgeLayer.append(path);
+
+      /* 悬停出现的「剪断」按钮 */
+      const m = bezMid(p1, p2, dx);
+      const del = document.createElementNS(SVGNS, 'g');
+      del.setAttribute('class', 'edge-del');
+      del.setAttribute('transform', `translate(${m.x},${m.y})`);
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('r', '9');
+      const x1 = document.createElementNS(SVGNS, 'path');
+      x1.setAttribute('d', 'M-3.4,-3.4 L3.4,3.4 M3.4,-3.4 L-3.4,3.4');
+      del.append(c, x1);
+      del.addEventListener('click', ev => { ev.stopPropagation(); removeEdge(e.id); });
+
+      g.append(hit, path, del);
+      edgeLayer.append(g);
     }
   }
 
@@ -285,7 +331,11 @@ export function renderEditor(root, params) {
     nodeEls.set(node.id, el);
 
     /* 选择 */
-    el.addEventListener('mousedown', e => { if (e.target.closest('.media-play')) return; select(node); }, true);
+    /* 从端口拉线时不要触发选中重绘：否则预览线被冲掉、也会打断正在输入的内容 */
+    el.addEventListener('mousedown', e => {
+      if (e.target.closest('.media-play') || e.target.closest('.node-port')) return;
+      select(node);
+    }, true);
 
     /* 拖动 */
     el.querySelector('.node-head').addEventListener('mousedown', e => {
@@ -304,33 +354,102 @@ export function renderEditor(root, params) {
       document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     });
 
-    /* 连线 */
-    el.querySelector('.port-out').addEventListener('mousedown', e => {
+    /* 连线：拖拽时高亮候选节点、吸附到输入端口、拖到空白处可直接建新节点连上 */
+    const startLink = e => {
       e.stopPropagation(); e.preventDefault();
       linking = node;
+      wrap.classList.add('linking');
+      nodeEls.forEach((nEl, id) => {
+        nEl.classList.toggle('linkable', id !== node.id);
+        nEl.classList.remove('link-target');
+      });
       const p1 = portPos(node, 'out');
-      tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      tempLine = document.createElementNS(SVGNS, 'path');
       tempLine.setAttribute('class', 'edge active');
       tempLine.setAttribute('d', `M${p1.x},${p1.y} L${p1.x},${p1.y}`);
-      edgeLayer.append(tempLine);
+      linkLayer.append(tempLine);
+
+      let target = null;
+      const clearTarget = () => { if (target) nodeEls.get(target.id)?.classList.remove('link-target'); target = null; };
       const move = ev => {
+        const hit = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
+        const t = hit ? proj.nodes.find(n => n.id === hit.dataset.id) : null;
+        const nt = (t && t.id !== node.id) ? t : null;
+        if (nt !== target) { clearTarget(); target = nt; if (target) nodeEls.get(target.id)?.classList.add('link-target'); }
         const w = toWorld(ev.clientX, ev.clientY);
-        const dx = Math.max(40, Math.abs(w.x - p1.x) * 0.45);
-        tempLine.setAttribute('d', `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${w.x - dx},${w.y} ${w.x},${w.y}`);
+        const end = target ? portPos(target, 'in') : w;      /* 吸附到目标节点的输入端口 */
+        const dx = Math.max(40, Math.abs(end.x - p1.x) * 0.45);
+        tempLine.setAttribute('d', `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${end.x - dx},${end.y} ${end.x - 2},${end.y}`);
       };
       const up = ev => {
         document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
-        tempLine?.remove(); tempLine = null;
-        const hit = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
-        if (hit) {
-          const target = proj.nodes.find(n => n.id === hit.dataset.id);
-          if (target && target.id !== node.id && !proj.edges.some(x => x.from === node.id && x.to === target.id)) {
+        tempLine?.remove(); tempLine = null; linking = null;
+        wrap.classList.remove('linking');
+        nodeEls.forEach(nEl => { nEl.classList.remove('linkable', 'link-target'); });
+        if (target) {
+          if (!proj.edges.some(x => x.from === node.id && x.to === target.id)) {
             pushUndo();
             proj.edges.push({ id: uid('e'), from: node.id, to: target.id });
             save(); drawEdges(); refresh(target);
           }
+          return;
         }
-        linking = null;
+        /* 空处松手：直接在落点建一个新节点并连上（Pavo 同款手感） */
+        const w = toWorld(ev.clientX, ev.clientY);
+        ctxMenu(ev.clientX, ev.clientY, [
+          { label: '连到新节点' },
+          ...['text', 'image', 'video', 'merge'].map(t => ({
+            text: NODE_REGISTRY[t].label,
+            onClick: () => {
+              const n = { id: uid('n'), type: t, x: w.x, y: w.y - 60, title: NODE_REGISTRY[t].label + '节点', prompt: '', content: '', media: null };
+              pushUndo();
+              proj.nodes.push(n);
+              proj.edges.push({ id: uid('e'), from: node.id, to: n.id });
+              refresh(); select(n); drawEdges(); save();
+            }
+          })),
+          '-',
+          { text: '取消', onClick: () => {} }
+        ]);
+      };
+      document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    };
+    el.querySelector('.port-out').addEventListener('mousedown', startLink);
+    /* 输入端口也能反向起线：拖到某个节点上 = 让它连到本节点 */
+    el.querySelector('.port-in').addEventListener('mousedown', e => {
+      e.stopPropagation(); e.preventDefault();
+      linking = node;
+      wrap.classList.add('linking');
+      nodeEls.forEach((nEl, id) => { nEl.classList.toggle('linkable', id !== node.id); });
+      const p1 = portPos(node, 'in');
+      tempLine = document.createElementNS(SVGNS, 'path');
+      tempLine.setAttribute('class', 'edge active');
+      tempLine.setAttribute('d', `M${p1.x},${p1.y} L${p1.x},${p1.y}`);
+      linkLayer.append(tempLine);
+      let target = null;
+      const move = ev => {
+        const hit = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
+        const t = hit ? proj.nodes.find(n => n.id === hit.dataset.id) : null;
+        const nt = (t && t.id !== node.id) ? t : null;
+        if (nt !== target) {
+          if (target) nodeEls.get(target.id)?.classList.remove('link-target');
+          target = nt; if (target) nodeEls.get(target.id)?.classList.add('link-target');
+        }
+        const w = toWorld(ev.clientX, ev.clientY);
+        const end = target ? portPos(target, 'out') : w;
+        const dx = Math.max(40, Math.abs(p1.x - end.x) * 0.45);
+        tempLine.setAttribute('d', `M${end.x},${end.y} C${end.x + dx},${end.y} ${p1.x - dx},${p1.y} ${p1.x + 2},${p1.y}`);
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+        tempLine?.remove(); tempLine = null; linking = null;
+        wrap.classList.remove('linking');
+        nodeEls.forEach(nEl => nEl.classList.remove('linkable', 'link-target'));
+        if (target && !proj.edges.some(x => x.from === target.id && x.to === node.id)) {
+          pushUndo();
+          proj.edges.push({ id: uid('e'), from: target.id, to: node.id });
+          save(); drawEdges(); refresh(node);
+        }
       };
       document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     });
@@ -389,8 +508,8 @@ export function renderEditor(root, params) {
   function renderBody(node, body, actions, rerender) {
     body.innerHTML = ''; actions.innerHTML = '';
     const expanded = isSel(node);
-    const statusEl = node.status ? h('div', { class: 'node-status' }, h('span', { class: 'spinner' }), node.status) : null;
-    const errEl = node.error ? h('div', { class: 'node-status err' }, '⚠ ' + node.error) : null;
+    /* 运行状态/进度统一交给 paintProgress，避免和下面的重绘打架 */
+    const statusEl = null, errEl = null;
 
     /* 折叠态：只露结果，不露任何可编辑控件 */
     if (!expanded) {
@@ -449,6 +568,7 @@ export function renderEditor(root, params) {
     actions.append(
       h('button', { class: 'node-btn', title: '收起面板，只看结果', onclick: deselect }, '收起'),
       h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
+    paintProgress(node);
   }
 
   function renderVideoOpts(node, refresh) {
@@ -639,38 +759,76 @@ export function renderEditor(root, params) {
     });
   }
 
+  /* 只刷新「状态 + 进度条」，不重建节点 DOM。
+     以前每次进度回调都整体重画节点，会把正在输入的文本框冲掉 —— 这就是手感卡顿的主因。 */
+  function paintProgress(node) {
+    const el = nodeEls.get(node.id); if (!el) return;
+    el.classList.toggle('running', !!(node.status || node.error));
+    const body = el.querySelector('.node-body'); if (!body) return;
+    let box = body.querySelector('.node-run');
+    if (!node.status && !node.error) { box?.remove(); return; }
+    if (!box) {
+      box = h('div', { class: 'node-run' },
+        h('div', { class: 'run-line' }, h('span', { class: 'spinner' }), h('span', { class: 'run-txt' }, '')),
+        h('div', { class: 'run-bar' }, h('i', {})));
+      body.prepend(box);
+    }
+    box.classList.toggle('err', !!node.error);
+    box.querySelector('.run-txt').textContent = node.error ? ('⚠ ' + node.error) : (node.status || '处理中…');
+    const p = Number(node.progress || 0);
+    box.querySelector('.run-bar').classList.toggle('indet', p <= 0);
+    box.querySelector('.run-bar i').style.width = Math.max(8, Math.min(100, p)) + '%';
+  }
+
   async function run(node, refresh, extra = '') {
     const type = node.type === 'merge' ? 'merge' : node.type === 'director' ? 'image' : node.type;
     const prompt = [node.prompt, extra].filter(Boolean).join('\n');
     const ups = upstream(node);
     const refImgs = ups.map(u => u.media?.url).filter(Boolean);
+    const t0 = Date.now();
+    const step = (txt, pct) => { node.status = txt; if (pct != null) node.progress = pct; paintProgress(node); };
 
-    node.error = ''; node.status = '生成中…'; refresh(node); save();
+    node.error = ''; node.progress = 8; step('排队中…');
     try {
       if (type === 'text') {
         if (!prompt) throw new Error('请先写点内容');
+        step('模型思考中…', 22);
         const out = await chat(prompt, { system: '你是短视频/短剧创作助手，输出中文，简洁可落地。' });
+        step('整理结果…', 88);
         node.content = out; node.media = null;
       } else if (type === 'image') {
         const p = prompt || ups.find(u => u.content)?.content || 'a cinematic frame';
-        const r = await genImage(p, { images: refImgs.slice(0, 1) });
+        step('提交画面…', 18);
+        const r = await genImage(p, { images: refImgs.slice(0, 1), size: node.size || '1024x1024' });
+        step('收图…', 90);
         node.media = { url: r.url, type: 'image' };
         store.add('works', { id: uid('w'), title: (node.prompt || '图片').slice(0, 24), type: 'image', url: r.url, createdAt: Date.now() });
       } else if (type === 'video') {
         const p = prompt || 'cinematic shot';
-        const r = await genVideo(p, { images: refImgs.slice(0, 2), motion: node.motion, firstFrame: node.firstFrame, lastFrame: node.lastFrame, onProgress: s => { node.status = s; refresh(node); } });
+        let vi = 0;
+        const r = await genVideo(p, {
+          images: refImgs.slice(0, 2), motion: node.motion, firstFrame: node.firstFrame, lastFrame: node.lastFrame,
+          onProgress: s => step(s, Math.min(92, 25 + vi++ * 4))
+        });
+        step('收片…', 95);
         node.media = { url: r.url, type: 'video' };
         store.add('works', { id: uid('w'), title: (node.prompt || '视频').slice(0, 24), type: 'video', url: r.url, createdAt: Date.now() });
       } else if (type === 'merge') {
         if (!refImgs.length) throw new Error('把视频节点连过来再合成');
+        step('整理片段…', 60);
         node.content = '片段已就绪（本地模式：请逐个下载后拼接，接入后端后可自动合成）';
       } else if (type === 'upload' || type === 'audio') {
         throw new Error('该节点请用「上传文件」');
       }
+      node.progress = 100;
+      step('完成', 100);
+      toast(`「${node.title || NODE_REGISTRY[node.type]?.label || '节点'}」完成 · ${((Date.now() - t0) / 1000).toFixed(1)}s`, 'ok');
       node.status = '';
     } catch (e) {
-      node.status = ''; node.error = e.message; toast('生成失败：' + e.message, 'err', 4000);
+      node.status = ''; node.error = e.message;
+      toast('生成失败：' + e.message, 'err', 4500);
     }
+    paintProgress(node);
     refresh(node); save();
   }
 
@@ -806,15 +964,27 @@ export function renderEditor(root, params) {
     undoBtn, redoBtn,
     h('div', { class: 'tb-div' }),
     mmToggle,
-    h('button', { class: 'tb-btn', title: '一键整理', onclick: arrange }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.8L20 19M8.2 16.2L20 5"/></svg>' })),
     h('div', { class: 'tb-div' }),
     h('button', { class: 'tb-btn', title: '缩小', onclick: () => { vp.zoom = Math.max(.25, vp.zoom * .85); applyVp(); } },
       h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>' })),
     zoomLabel,
     h('button', { class: 'tb-btn', title: '放大', onclick: () => { vp.zoom = Math.min(2.5, vp.zoom * 1.15); applyVp(); } },
       h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' })),
-    h('button', { class: 'tb-btn', title: '总览全部内容', onclick: fit }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' })),
-    h('button', { class: 'tb-btn', title: '导出项目 JSON', onclick: exportJSON }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>' }))
+    /* 低频操作收进「更多」，工具栏保持清爽（简洁收纳） */
+    h('button', { class: 'tb-btn', title: '更多', onclick: e => {
+      const r = e.currentTarget.getBoundingClientRect();
+      ctxMenu(Math.max(8, r.left - 120), r.top - 190, [
+        { label: '画布' },
+        { text: '总览全部内容', onClick: fit },
+        { text: '一键整理排布', onClick: arrange },
+        '-',
+        { text: '清空所有连线', onClick: () => {
+          if (!proj.edges.length) return toast('本来就没有连线', 'ok', 1500);
+          pushUndo(); proj.edges = []; drawEdges(); save(); toast('已清空连线', 'ok');
+        } },
+        { text: '导出项目 JSON', onClick: exportJSON }
+      ]);
+    } }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>' }))
   );
 
   const topbar = h('div', { class: 'canvas-topbar' },
@@ -824,7 +994,8 @@ export function renderEditor(root, params) {
       h('div', { class: 'canvas-name' }, projSel, nameInput)),
     h('div', { style: { display: 'flex', gap: '8px' } },
       h('button', { class: 'btn-ghost', onclick: () => toast('已自动保存') }, '保存'),
-      h('button', { class: 'btn-primary', onclick: () => toast('本地模式：导出 JSON 即可备份/分享', 'ok', 3500) }, '分享')));
+      /* 分享 = 真的导出项目 JSON（备份 / 发给别人导入），不再只是弹一句提示 */
+      h('button', { class: 'btn-primary', title: '导出为 JSON 文件，可备份或发给别人', onclick: exportJSON }, '分享')));
 
   function fit() {
     if (!proj.nodes.length) return;
