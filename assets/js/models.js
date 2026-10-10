@@ -28,7 +28,10 @@ export const TYPE_LABEL = { text: '文本/剧情', image: '图像', video: '视�
 /* 当列表为空（用户不再手动配置模型）时，用预配置后台充当默认 provider，
    这样首页 / 图像 / 视频 / 画布等原有的「模型选择器」不会退化成「未接入」 */
 function backendAsProvider(t) {
-  return { id: '__backend', name: '平台 AI 后台', type: t, model: '已连接', enabled: true, apiKey: '', baseUrl: '' };
+  /* 模型名是公开标识（agnes-3.0-flash 等），不是密钥也不是地址，可放心展示，
+     这样首页模型条 / 图像·视频下拉能直接看到平台当前用的是哪个模型 */
+  const m = backendProvider(t).model || '已连接';
+  return { id: '__backend', name: '平台 AI 后台', type: t, model: m, enabled: true, apiKey: '', baseUrl: '' };
 }
 export const providers = {
   all: () => { const a = store.list('providers'); return a.length ? a : [backendAsProvider('text'), backendAsProvider('image'), backendAsProvider('video')]; },
