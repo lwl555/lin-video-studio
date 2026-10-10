@@ -96,12 +96,41 @@ export function renderEditor(root, params) {
   function undo() { if (!undoStack.length) return; redoStack.push(takeSnap()); restoreSnap(undoStack.pop()); toast('已撤销', 'ok', 900); }
   function redo() { if (!redoStack.length) return; undoStack.push(takeSnap()); restoreSnap(redoStack.pop()); toast('已重做', 'ok', 900); }
 
-  /* ---- 小地图（鸟瞰导航，Pavo 同款） ---- */
-  let mmVisible = true, mmTransform = null, mmScheduled = false;
+  /* ---- 小地图（鸟瞰导航）
+     规则：只有「有节点跑到视野外」时它才有用，否则自动收起，不白占画布左下角。
+     工具栏上的小地图按钮可强制显示 / 隐藏。 ---- */
+  let mmOn = true, mmForce = false, mmTransform = null, mmScheduled = false;
+  /* 缩略图节点配色（按节点类型） */
+  const MM_FILL = {
+    text: '#D9DEE7', image: '#AFDED7', video: '#A9C6EA',
+    audio: '#EFD7A9', merge: '#C3CBF0', director: '#D6C9EC', upload: '#E3E6EA'
+  };
+  function mmUseful() {
+    if (!proj.nodes.length) return false;
+    const margin = 60;
+    const vx = -vp.x / vp.zoom, vy = -vp.y / vp.zoom;
+    const vw = wrap.clientWidth / vp.zoom, vh = wrap.clientHeight / vp.zoom;
+    for (const n of proj.nodes) {
+      const el = nodeEls.get(n.id);
+      const w = el?.offsetWidth || 300, hh = el?.offsetHeight || 160;
+      if (n.x < vx - margin || n.y < vy - margin) return true;
+      if (n.x + w > vx + vw + margin || n.y + hh > vy + vh + margin) return true;
+    }
+    return false;
+  }
+  function mmVisible() { return mmOn && (mmForce || mmUseful()); }
+  function applyMM() {
+    const vis = mmVisible();
+    mmWrap.classList.toggle('hidden', !vis);
+    mmToggle.classList.toggle('active', vis);
+    mmToggle.title = vis ? '收起小地图'
+      : mmOn ? '小地图（内容都在视野内，已自动收起）' : '显示小地图';
+    if (vis) drawMinimap();
+  }
   function scheduleMinimap() {
     if (mmScheduled) return;
     mmScheduled = true;
-    requestAnimationFrame(() => { mmScheduled = false; if (mmVisible) drawMinimap(); });
+    requestAnimationFrame(() => { mmScheduled = false; applyMM(); });
   }
   function drawMinimap() {
     const c = mmCanvas; if (!c) return;
@@ -139,20 +168,29 @@ export function renderEditor(root, params) {
       const [x2, y2] = toMM(b.x + bw / 2, b.y + bh / 2);
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
     }
-    /* 节点 */
+    /* 节点：按类型配色，一眼区分文本/图片/视频… */
     for (const n of proj.nodes) {
       const [w, hh] = sizeOf(n);
       const [x, y] = toMM(n.x, n.y);
-      ctx.fillStyle = n.id === selected?.id ? '#17B8A6'
+      const rw = Math.max(5, w * s), rh = Math.max(4, hh * s);
+      ctx.fillStyle = n.error ? '#F0A9A9'
         : n.status ? '#F5C26B'
-        : n.media?.url ? '#AFDED7'
-        : n.type === 'text' ? '#D9DEE7' : '#E6E8EC';
-      ctx.fillRect(x, y, Math.max(5, w * s), Math.max(4, hh * s));
+        : MM_FILL[n.type] || '#E6E8EC';
+      ctx.fillRect(x, y, rw, rh);
+      const isSel = n.id === selected?.id;
+      ctx.strokeStyle = isSel ? '#17B8A6' : 'rgba(17,17,17,.16)';
+      ctx.lineWidth = isSel ? 1.5 : 1;
+      ctx.strokeRect(Math.round(x) + .5, Math.round(y) + .5,
+        Math.max(3, Math.round(rw) - 1), Math.max(3, Math.round(rh) - 1));
     }
-    /* 当前视口框 */
+    /* 当前视口框：淡青底 + 锐利青边，一眼看出「我在看哪一块」 */
     const [vx, vy] = toMM(view.x, view.y);
-    ctx.strokeStyle = '#17B8A6'; ctx.lineWidth = 1.2;
-    ctx.strokeRect(vx, vy, view.w * s, view.h * s);
+    const vw2 = Math.min(W, view.w * s), vh2 = Math.min(H, view.h * s);
+    ctx.fillStyle = 'rgba(23,184,166,.08)';
+    ctx.fillRect(vx, vy, vw2, vh2);
+    ctx.strokeStyle = '#17B8A6'; ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(vx) + .5, Math.round(vy) + .5,
+      Math.max(2, Math.round(vw2) - 1), Math.max(2, Math.round(vh2) - 1));
   }
 
   /* ---- 边 ---- */
@@ -714,6 +752,7 @@ export function renderEditor(root, params) {
   mmCanvas.addEventListener('pointerdown', e => {
     if (!mmTransform) return;
     e.preventDefault();
+    mmWrap.classList.add('dragging');
     const jump = ev => {
       const r = mmCanvas.getBoundingClientRect();
       const wx = mmTransform.minX + (ev.clientX - r.left - mmTransform.ox) / mmTransform.s;
@@ -723,18 +762,22 @@ export function renderEditor(root, params) {
       applyVp();
     };
     jump(e);
-    const up = () => { document.removeEventListener('pointermove', jump); document.removeEventListener('pointerup', up); save(); };
+    const up = () => {
+      document.removeEventListener('pointermove', jump); document.removeEventListener('pointerup', up);
+      mmWrap.classList.remove('dragging');
+      save();
+    };
     document.addEventListener('pointermove', jump);
     document.addEventListener('pointerup', up);
   });
 
   const mmToggle = h('button', {
-    class: 'tb-btn active', title: '小地图',
+    class: 'tb-btn active', title: '收起小地图',
     onclick: () => {
-      mmVisible = !mmVisible;
-      mmToggle.classList.toggle('active', mmVisible);
-      mmWrap.classList.toggle('hidden', !mmVisible);
-      if (mmVisible) scheduleMinimap();
+      const vis = mmVisible();
+      mmOn = !vis;                          // 直接翻转「我要不要看到它」
+      mmForce = mmOn && !mmUseful();        // 内容放得下时靠强制显示撑住
+      applyMM();
     }
   }, h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>' }));
 

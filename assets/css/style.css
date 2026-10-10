@@ -387,6 +387,7 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .mm-wrap{position:absolute;left:16px;bottom:72px;background:#fff;border:1px solid var(--line);
   border-radius:10px;padding:5px;box-shadow:var(--shadow-s);z-index:20}
 .mm-canvas{display:block;border-radius:6px;cursor:pointer;touch-action:none}
+.mm-wrap.dragging .mm-canvas{cursor:grabbing}
 .canvas-topbar{position:absolute;top:0;left:0;right:0;height:50px;display:flex;align-items:center;
   justify-content:space-between;padding:0 16px;background:rgba(255,255,255,.9);border-bottom:1px solid var(--line);
   backdrop-filter:blur(10px);z-index:20}
