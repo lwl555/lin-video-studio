@@ -106,7 +106,7 @@ export function renderEditor(root, params) {
   function drawMinimap() {
     const c = mmCanvas; if (!c) return;
     const ctx = c.getContext('2d');
-    const W = 224, H = 150, dpr = Math.min(2, devicePixelRatio || 1);
+    const W = 168, H = 112, dpr = Math.min(2, devicePixelRatio || 1);
     if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; c.style.width = W + 'px'; c.style.height = H + 'px'; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -151,7 +151,7 @@ export function renderEditor(root, params) {
     }
     /* 当前视口框 */
     const [vx, vy] = toMM(view.x, view.y);
-    ctx.strokeStyle = '#17B8A6'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#17B8A6'; ctx.lineWidth = 1.2;
     ctx.strokeRect(vx, vy, view.w * s, view.h * s);
   }
 
