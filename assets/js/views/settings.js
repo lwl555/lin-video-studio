@@ -2,7 +2,7 @@
 import { h, $, toast, modal, confirm, download, imgErr } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, auth, uid, ADMIN } from '../store.js';
-import { testBackend } from '../models.js';
+import { testBackend, providers, PRESETS, TYPE_LABEL } from '../models.js';
 import { usageReport, clearOldest, clearKind, clearAllMedia, compressAllImages, fmtMB, fmtKB } from '../storage.js';
 
 export function render(root) {
@@ -11,7 +11,7 @@ export function render(root) {
 
   page.append(h('div', {},
     h('div', { class: 'page-title' }, '设置'),
-    h('div', { class: 'page-sub' }, 'AI 后台由平台统一接入并维护，你无需、也无法填写任何密钥或地址')));
+    h('div', { class: 'page-sub' }, 'AI 后台由平台统一接入并维护，开箱即用；你也可以额外接入自己的模型（可选）')));
 
   /* ---- AI 后台服务（唯一可操作项：开 / 关） ---- */
   const on = () => { const b = store.state.backend; return b ? b.enabled !== false : true; };
@@ -60,6 +60,127 @@ export function render(root) {
 
   page.append(h('div', { class: 'section-title' }, 'AI 后台服务'), backendCard);
   drawStatus();
+
+  /* ---- 我的模型（可选 · 自带 Key） ---- */
+  const mineWrap = h('div', {});
+  page.append(h('div', { class: 'section-title' }, '我的模型（可选）'), mineWrap);
+
+  function maskKey(k) {
+    const s = String(k || '');
+    if (!s) return '未填';
+    if (s.length <= 10) return s.slice(0, 3) + '••••';
+    return s.slice(0, 6) + '••••••' + s.slice(-4);
+  }
+
+  function drawMine() {
+    mineWrap.innerHTML = '';
+    const list = store.list('providers');
+
+    mineWrap.append(h('div', { class: 'provider-card' },
+      h('div', { class: 'hint', style: { marginTop: '0' } },
+        '平台后台已经接好，日常不用动这里。只有你想用自己的 API Key（自带模型 / BYOK）时才需要添加 —— 添加并启用后，会出现在「图片生成 / 视频生成」的模型下拉里；不添加也照样能用平台的文本、图像、视频模型。'),
+      h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginTop: '14px' } },
+        h('button', { class: 'btn-ghost', onclick: () => openForm(null) }, '＋ 添加模型'),
+        list.length ? h('span', { class: 'hint', style: { margin: '0' } }, `已添加 ${list.length} 个`) : null)));
+
+    if (!list.length) {
+      mineWrap.append(h('div', { class: 'provider-card' },
+        h('div', { class: 'hint', style: { marginTop: '0' } },
+          '还没有添加自己的模型。不添加也能正常使用平台的文本 / 图像 / 视频模型。')));
+      return;
+    }
+
+    for (const p of list) {
+      const sw2 = h('input', { type: 'checkbox', checked: p.enabled !== false });
+      sw2.addEventListener('change', e => {
+        providers.update(p.id, { enabled: e.target.checked });
+        toast(e.target.checked ? `已启用「${p.name || '未命名'}」` : `已停用「${p.name || '未命名'}」`, 'ok');
+        drawMine();
+      });
+      mineWrap.append(h('div', { class: 'provider-card' },
+        h('div', { class: 'provider-head', style: { marginBottom: '0' } },
+          h('span', { class: 'tag' }, TYPE_LABEL[p.type] || p.type || '文本/剧情'),
+          h('div', { class: 'provider-name', style: { flexDirection: 'column', alignItems: 'flex-start', gap: '2px', minWidth: '0' } },
+            h('span', {}, p.name || '未命名模型'),
+            h('div', { class: 'hint', style: { marginTop: '0', wordBreak: 'break-all' } },
+              `${p.model || '未填模型名'} · ${p.baseUrl || '未填地址'} · Key ${maskKey(p.apiKey)}`)),
+          h('label', { class: 'switch' }, sw2, h('span', { class: 'slider' })),
+          h('button', { class: 'node-btn', onclick: () => openForm(p) }, '编辑'),
+          h('button', { class: 'node-btn', onclick: async () => {
+            if (!await confirm(`删除模型「${p.name || '未命名'}」？`)) return;
+            providers.remove(p.id); drawMine(); toast('已删除', 'ok');
+          } }, '删除'))));
+    }
+  }
+
+  /* 添加 / 编辑表单（就地插入列表顶部） */
+  function openForm(existing) {
+    const st = {
+      type: existing?.type || 'text',
+      name: existing?.name || '',
+      baseUrl: existing?.baseUrl || '',
+      model: existing?.model || '',
+      apiKey: existing?.apiKey || ''
+    };
+    const form = h('div', { class: 'provider-card', style: { borderColor: 'var(--brand)' } });
+
+    const typeSel = h('select', { class: 'form-select' },
+      Object.entries(TYPE_LABEL).filter(([k]) => k !== 'audio')
+        .map(([k, v]) => h('option', { value: k, selected: k === st.type }, v)));
+
+    const nameInp = h('input', { class: 'form-input', placeholder: '例如：我的 Agnes / 我的 DeepSeek', value: st.name });
+    const urlInp = h('input', { class: 'form-input', placeholder: 'https://xxx/v1', value: st.baseUrl });
+    const modelInp = h('input', { class: 'form-input', placeholder: '模型名，例如 agnes-3.0-flash', value: st.model });
+    const keyInp = h('input', { class: 'form-input', type: 'password', placeholder: 'sk-...（只存在你自己的浏览器里）', value: st.apiKey });
+    const presetRow = h('div', { class: 'chip-row', style: { margin: '0', justifyContent: 'flex-start' } });
+
+    function drawPresets() {
+      presetRow.innerHTML = '';
+      const ps = PRESETS.filter(x => x.type === typeSel.value && x.key !== 'custom');
+      for (const pre of ps) presetRow.append(h('button', { class: 'chip', onclick: () => {
+        nameInp.value = pre.name; urlInp.value = pre.baseUrl; modelInp.value = pre.model; keyInp.focus();
+      } }, pre.name));
+      if (!ps.length) presetRow.append(h('span', { class: 'hint', style: { margin: '0' } }, '这类没有内置预设，手动填地址与模型名即可'));
+    }
+    typeSel.addEventListener('change', drawPresets);
+    drawPresets();
+
+    form.append(
+      h('div', { style: { fontSize: '14px', fontWeight: '600', marginBottom: '6px' } }, existing ? '编辑模型' : '添加模型'),
+      h('div', { class: 'hint', style: { margin: '0 0 16px' } }, 'Key 只保存在你自己的浏览器本地，不会上传到任何地方。'),
+      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '类型'), typeSel),
+      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '常用预设（点一下自动填地址与模型名）'), presetRow),
+      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '名称'), nameInp),
+      h('div', { class: 'form-row' },
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL'), urlInp),
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型名'), modelInp)),
+      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'API Key'), keyInp),
+      h('div', { style: { display: 'flex', gap: '10px' } },
+        h('button', { class: 'btn-primary', onclick: () => {
+          const url = urlInp.value.trim(), model = modelInp.value.trim();
+          if (!url) return toast('请填 Base URL', 'err');
+          if (!model) return toast('请填模型名', 'err');
+          const data = {
+            type: typeSel.value,
+            name: nameInp.value.trim() || model,
+            baseUrl: url,
+            model,
+            apiKey: keyInp.value.trim()
+          };
+          if (existing) providers.update(existing.id, data);
+          else providers.add({ ...data, enabled: true });
+          const l = store.list('providers').length;
+          $('#credit-num') && ($('#credit-num').textContent = l ? `${l} 个模型` : 'BYOK');
+          toast(existing ? '已保存' : '已添加，可在模型下拉里选到', 'ok');
+          drawMine();
+        } }, existing ? '保存' : '添加'),
+        h('button', { class: 'btn-ghost', onclick: () => drawMine() }, '取消')));
+
+    mineWrap.prepend(form);
+    nameInp.focus();
+  }
+
+  drawMine();
 
   /* ---- 存储管理 ---- */
   function storageCard() {

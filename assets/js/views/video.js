@@ -74,7 +74,7 @@ export function render(root, params = {}) {
     try {
       const imgs = [frames.first, frames.last].filter(Boolean);
       const r = await genVideo(prompt, {
-        images: imgs, ratio, duration,
+        provider: p, images: imgs, ratio, duration,
         onProgress: s => { statusLine.textContent = s; }
       });
       statusLine.textContent = '';

@@ -50,12 +50,29 @@ function backendOn() {
   return b ? b.enabled !== false : BACKEND.enabled;
 }
 
-async function request(path, { method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
+/* 把一个「视图里选中的模型」解析成真正要连的通道：
+   - 用户自己添加的模型（有 Base URL / Key）→ 走他自己的地址与 Key
+   - 平台占位 provider / 未选 → 走平台预配置后台（配置对用户不可见） */
+function resolveConn(sel, type) {
+  if (sel && sel.id && sel.id !== '__backend' && (sel.baseUrl || sel.apiKey)) {
+    const base = String(sel.baseUrl || '').replace(/\/+$/, '');
+    if (!base) throw new Error('这个模型没填 Base URL，去「模型接入 → 我的模型」补全');
+    if (!sel.apiKey) throw new Error('这个模型没填 API Key，去「模型接入 → 我的模型」补全');
+    return { baseUrl: base, apiKey: sel.apiKey, model: sel.model || '', own: true };
+  }
+  const b = backendProvider(type);
+  return { baseUrl: String(b.baseUrl).replace(/\/+$/, ''), apiKey: b.apiKey || '', model: b.model, own: false, proxy: !!b.proxy };
+}
+
+async function request(path, { base, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
   if (!backendOn()) throw new Error('AI 后台未启用，请到「设置 → AI 后台服务」开启');
   /* 走服务端代理时，前端只把请求发到代理地址，密钥由代理侧注入，前端零暴露 */
-  const _base = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '');
-  /* path 传绝对 URL 时（如 Agnes 视频轮询 /agnesapi）直接使用；代理模式下仍强制走代理 */
-  const url = (!BACKEND.proxyUrl && /^https?:\/\//.test(path)) ? path : _base + path;
+  const _base = String(base || BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '');
+  /* path 传绝对 URL 时（如 Agnes 视频轮询 /agnesapi）直接使用；平台走服务端代理时仍强制经代理 */
+  const abs = /^https?:\/\//.test(path);
+  const url = abs
+    ? ((BACKEND.proxyUrl && !base) ? _base + new URL(path).pathname + new URL(path).search : path)
+    : _base + path;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
   const secs = Math.round(timeout / 1000);
@@ -90,8 +107,8 @@ function authHeaders(key) {
 }
 
 /* ---------- 文本 ---------- */
-export async function chat(prompt, { system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
-  const p = backendProvider('text');
+export async function chat(prompt, { provider, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
+  const p = resolveConn(provider, 'text');
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : prompt;
@@ -102,7 +119,7 @@ export async function chat(prompt, { system = '', json = false, temperature = 0.
     stream: false
   };
   if (json) body.response_format = { type: 'json_object' };
-  const res = await request('/chat/completions', { headers: authHeaders(p.apiKey), body, timeout });
+  const res = await request('/chat/completions', { base: p.baseUrl, headers: authHeaders(p.apiKey), body, timeout });
   const b = res.body || {};
   const text = b?.choices?.[0]?.message?.content
     ?? b?.choices?.[0]?.text
@@ -118,11 +135,11 @@ export async function chat(prompt, { system = '', json = false, temperature = 0.
 }
 
 /* ---------- 图像 ---------- */
-export async function genImage(prompt, { size = '1024x1024', n = 1, images = [] } = {}) {
-  const p = backendProvider('image');
+export async function genImage(prompt, { provider, size = '1024x1024', n = 1, images = [] } = {}) {
+  const p = resolveConn(provider, 'image');
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
-  const res = await request('/images/generations', { headers: authHeaders(p.apiKey), body, timeout: 180000 });
+  const res = await request('/images/generations', { base: p.baseUrl, headers: authHeaders(p.apiKey), body, timeout: 180000 });
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
@@ -132,12 +149,17 @@ export async function genImage(prompt, { size = '1024x1024', n = 1, images = [] 
 }
 
 /* ---------- 视频（Agnes 异步任务：POST /v1/videos → GET /agnesapi?video_id=） ---------- */
-export async function genVideo(prompt, { images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
-  const p = backendProvider('video');
-  /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1） */
-  const base = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, ''); // .../v1
-  const origin = base.replace(/\/v1$/, '');                                    // https://api.agnes-ai.cn
-  const pollUrl = id => `${origin}/agnesapi?video_id=${encodeURIComponent(id)}&model_name=${encodeURIComponent(p.model)}`;
+export async function genVideo(prompt, { provider, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
+  const p = resolveConn(provider, 'video');
+  const base = p.baseUrl;                                          // 例如 https://api.agnes-ai.cn/v1
+  /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1）；
+     其它家（用户自带）走通用的 /video/generations + /video/status */
+  const isAgnes = p.own ? /agnes-ai\.(cn|com)/i.test(base) : true;
+  const origin = base.replace(/\/(?:v1|v3|api\/v3)\/?$/, '');
+  const submitPath = isAgnes ? '/videos' : '/video/generations';
+  const pollUrl = id => isAgnes
+    ? `${origin}/agnesapi?video_id=${encodeURIComponent(id)}&model_name=${encodeURIComponent(p.model)}`
+    : `${base}/video/status?id=${encodeURIComponent(id)}`;
 
   let full = prompt || 'cinematic shot';
   if (motion) full += `（运镜要求：${motion}）`;
@@ -162,7 +184,7 @@ export async function genVideo(prompt, { images = [], duration = 5, ratio = '16:
   }
 
   onProgress?.('提交视频任务…');
-  const res = await request('/videos', { headers: authHeaders(p.apiKey), body, timeout: 90000 });
+  const res = await request(submitPath, { base, headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
   if (direct) return { url: direct, raw: b };
@@ -174,7 +196,7 @@ export async function genVideo(prompt, { images = [], duration = 5, ratio = '16:
     onProgress?.(`生成中… ${Math.min(99, Math.round(i * 100 / 40))}%`);
     let s;
     try {
-      s = await request(pollUrl(id), { method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000 });
+      s = await request(pollUrl(id), { base, method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000 });
     } catch (e) { continue; }
     const sb = s.body || {};
     const st = String(sb?.status || sb?.internal_status || sb?.data?.status || '').toLowerCase();
