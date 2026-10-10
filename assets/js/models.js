@@ -18,7 +18,7 @@ export const PRESETS = [
   { key: 'sf-img', name: '硅基流动 图像', type: 'image', baseUrl: 'https://api.siliconflow.cn/v1', model: 'black-forest-labs/FLUX.1-schnell' },
   { key: 'oai-img', name: 'OpenAI 图像', type: 'image', baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1' },
   { key: 'agnes-vid', name: 'Agnes Video', type: 'video', baseUrl: 'https://api.agnes-ai.cn/v1', model: 'agnes-video-2.5-flash' },
-  { key: 'agnes-vid2', name: 'Agnes Video 2.5 标准版', type: 'video', baseUrl: 'https://api.agnes-ai.cn/v1', model: 'agnes-video-2.5' },
+  { key: 'agnes-vid2', name: 'Agnes Video 2.5', type: 'video', baseUrl: 'https://api.agnes-ai.cn/v1', model: 'agnes-video-2.5-flash' },
   { key: 'sf-vid', name: '硅基流动 视频', type: 'video', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Wan-AI/Wan2.2-T2V-A14B' },
   { key: 'custom', name: '自定义', type: 'text', baseUrl: '', model: '' }
 ];
@@ -53,7 +53,9 @@ function backendOn() {
 async function request(path, { method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
   if (!backendOn()) throw new Error('AI 后台未启用，请到「设置 → AI 后台服务」开启');
   /* 走服务端代理时，前端只把请求发到代理地址，密钥由代理侧注入，前端零暴露 */
-  const url = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '') + path;
+  const _base = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '');
+  /* path 传绝对 URL 时（如 Agnes 视频轮询 /agnesapi）直接使用；代理模式下仍强制走代理 */
+  const url = (!BACKEND.proxyUrl && /^https?:\/\//.test(path)) ? path : _base + path;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
   const secs = Math.round(timeout / 1000);
@@ -129,48 +131,64 @@ export async function genImage(prompt, { size = '1024x1024', n = 1, images = [] 
   return { url, raw: b };
 }
 
-/* ---------- 视频（异步任务轮询，兼容主流结构） ---------- */
+/* ---------- 视频（Agnes 异步任务：POST /v1/videos → GET /agnesapi?video_id=） ---------- */
 export async function genVideo(prompt, { images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
   const p = backendProvider('video');
-  const submitPath = '/video/generations';
-  const queryPath = '/video/status';
+  /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1） */
+  const base = (BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, ''); // .../v1
+  const origin = base.replace(/\/v1$/, '');                                    // https://api.agnes-ai.cn
+  const pollUrl = id => `${origin}/agnesapi?video_id=${encodeURIComponent(id)}&model_name=${encodeURIComponent(p.model)}`;
+
   let full = prompt || 'cinematic shot';
   if (motion) full += `（运镜要求：${motion}）`;
-  const body = { model: p.model, prompt: full };
-  /* 首尾帧作为参考图注入：图生视频补间最常用 */
-  const imgs = [...images];
-  if (firstFrame) imgs.unshift(firstFrame);
-  if (lastFrame) imgs.push(lastFrame);
-  if (imgs.length) body.images = imgs;
-  onProgress?.('提交任务…');
-  const res = await request(submitPath, { headers: authHeaders(p.apiKey), body, timeout: 90000 });
+
+  const body = {
+    model: p.model,
+    prompt: full,
+    seconds: String(Math.min(12, Math.max(4, Math.round(duration) || 5))),
+    size: '720P',
+    aspect_ratio: ratio || '16:9'
+  };
+
+  /* mode：有首/尾帧 → keyframe；有多参考图 → reference；否则 text */
+  if (firstFrame || lastFrame) {
+    body.mode = 'keyframe';
+    if (firstFrame) body.first_frame = firstFrame;
+    if (lastFrame) body.last_frame = lastFrame;
+  } else {
+    const imgs = [...images].filter(Boolean);
+    if (imgs.length) { body.mode = 'reference'; body.images = imgs; }
+    else body.mode = 'text';
+  }
+
+  onProgress?.('提交视频任务…');
+  const res = await request('/videos', { headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
-  const direct = b?.video_url || b?.url || b?.data?.video_url || b?.data?.url || b?.output?.video_url;
+  const direct = b?.video_url || b?.url || b?.data?.url;
   if (direct) return { url: direct, raw: b };
-  const id = b?.id || b?.task_id || b?.data?.id || b?.data?.task_id || b?.output?.id;
+  const id = b?.video_id || b?.id || b?.task_id || b?.data?.video_id || b?.data?.id;
   if (!id) throw new Error('视频任务提交失败（未取到任务 ID）：' + JSON.stringify(b).slice(0, 250));
-  for (let i = 0; i < 120; i++) {
+
+  for (let i = 0; i < 150; i++) {
     await new Promise(r => setTimeout(r, 4000));
-    onProgress?.(`生成中… ${Math.min(100, Math.round(i * 100 / 60))}%`);
+    onProgress?.(`生成中… ${Math.min(99, Math.round(i * 100 / 40))}%`);
     let s;
     try {
-      s = await request(`${queryPath}?id=${encodeURIComponent(id)}`, {
-        method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000
-      });
+      s = await request(pollUrl(id), { method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000 });
     } catch (e) { continue; }
     const sb = s.body || {};
-    const st = String(sb?.status || sb?.data?.status || sb?.state || '').toLowerCase();
-    const done = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(st);
+    const st = String(sb?.status || sb?.internal_status || sb?.data?.status || '').toLowerCase();
+    const done = ['completed', 'succeeded', 'success', 'done', 'finished'].includes(st);
     const fail = ['failed', 'error', 'cancelled'].includes(st);
-    const url = sb?.video_url || sb?.url || sb?.data?.video_url || sb?.data?.url || sb?.output?.video_url
-      || sb?.result?.video_url || (Array.isArray(sb?.data?.videos) ? sb.data.videos[0]?.url : null);
-    if (done || url) {
+    const url = sb?.url || sb?.video_url || sb?.data?.url || sb?.result?.url;
+    if (done) {
       if (!url) throw new Error('任务完成但未返回视频地址：' + JSON.stringify(sb).slice(0, 200));
       return { url, raw: sb };
     }
-    if (fail) throw new Error('视频生成失败：' + JSON.stringify(sb).slice(0, 200));
+    if (url) return { url, raw: sb };
+    if (fail) throw new Error('视频生成失败：' + JSON.stringify(sb.error || sb).slice(0, 200));
   }
-  throw new Error('视频生成超时，请到后台查看任务结果');
+  throw new Error('视频生成超时，请稍后重试');
 }
 
 /* ---------- 后端连通性自检（供设置页「测试连接」） ---------- */
