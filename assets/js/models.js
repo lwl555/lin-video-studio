@@ -32,7 +32,8 @@ function backendAsProvider(t) {
 }
 export const providers = {
   all: () => { const a = store.list('providers'); return a.length ? a : [backendAsProvider('text'), backendAsProvider('image'), backendAsProvider('video')]; },
-  byType: t => { const a = store.list('providers').filter(p => p.type === t && p.enabled !== false); return a.length ? a : [backendAsProvider(t)]; },
+  /* 平台后台永远排第一位（默认可用、开箱即用）；用户自带的模型排在其后，可在下拉里自行切换 */
+  byType: t => [backendAsProvider(t), ...store.list('providers').filter(p => p.type === t && p.enabled !== false)],
   defaultOf: t => providers.byType(t)[0] || null,
   add(p) { return store.add('providers', { id: uid('pv'), enabled: true, ...p }); },
   update(id, patch) { return store.update('providers', id, patch); },
@@ -64,7 +65,7 @@ function resolveConn(sel, type) {
   return { baseUrl: String(b.baseUrl).replace(/\/+$/, ''), apiKey: b.apiKey || '', model: b.model, own: false, proxy: !!b.proxy };
 }
 
-async function request(path, { base, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
+async function request(path, { base, own = false, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
   if (!backendOn()) throw new Error('AI 后台未启用，请到「设置 → AI 后台服务」开启');
   /* 走服务端代理时，前端只把请求发到代理地址，密钥由代理侧注入，前端零暴露 */
   const _base = String(base || BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '');
@@ -86,7 +87,9 @@ async function request(path, { base, method = 'POST', headers = {}, body, timeou
     const txt = await r.text();
     if (!r.ok) {
       let hint = '';
-      if (r.status === 401 || r.status === 403) hint = '（后端密钥无效或模型无权限，请联系平台）';
+      if (r.status === 401 || r.status === 403) hint = own
+        ? '（你的 Key 无效、或该模型你没权限 → 去「模型接入 → 我的模型」检查）'
+        : '（后端密钥无效或模型无权限，请联系平台）';
       else if (r.status === 404) hint = '（模型名或路径不对）';
       else if (r.status === 429) hint = '（触发限流，等 1 分钟再试）';
       throw new Error(`HTTP ${r.status}${hint} ${txt.slice(0, 240)}`);
@@ -119,7 +122,7 @@ export async function chat(prompt, { provider, system = '', json = false, temper
     stream: false
   };
   if (json) body.response_format = { type: 'json_object' };
-  const res = await request('/chat/completions', { base: p.baseUrl, headers: authHeaders(p.apiKey), body, timeout });
+  const res = await request('/chat/completions', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout });
   const b = res.body || {};
   const text = b?.choices?.[0]?.message?.content
     ?? b?.choices?.[0]?.text
@@ -139,7 +142,7 @@ export async function genImage(prompt, { provider, size = '1024x1024', n = 1, im
   const p = resolveConn(provider, 'image');
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
-  const res = await request('/images/generations', { base: p.baseUrl, headers: authHeaders(p.apiKey), body, timeout: 180000 });
+  const res = await request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 });
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
@@ -184,7 +187,7 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
   }
 
   onProgress?.('提交视频任务…');
-  const res = await request(submitPath, { base, headers: authHeaders(p.apiKey), body, timeout: 90000 });
+  const res = await request(submitPath, { base, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
   if (direct) return { url: direct, raw: b };
@@ -196,7 +199,7 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
     onProgress?.(`生成中… ${Math.min(99, Math.round(i * 100 / 40))}%`);
     let s;
     try {
-      s = await request(pollUrl(id), { base, method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000 });
+      s = await request(pollUrl(id), { base, own: p.own, method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000 });
     } catch (e) { continue; }
     const sb = s.body || {};
     const st = String(sb?.status || sb?.internal_status || sb?.data?.status || '').toLowerCase();
