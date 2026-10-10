@@ -386,7 +386,8 @@ export function renderEditor(root, params) {
     const xf = h('input', { type: 'checkbox' });
     xf.id = 'mg-xf-' + node.id;
     const btn = h('button', { class: 'node-btn primary', style: { marginTop: '8px' }, onclick: async e => {
-      e.currentTarget.disabled = true;
+      const b = e.currentTarget;
+      b.disabled = true;
       node.error = ''; node.status = '准备合成引擎…'; refresh(node);
       try {
         const r = await concatVideos(ups.map(u => u.media.url), {
@@ -401,7 +402,7 @@ export function renderEditor(root, params) {
         node.status = ''; node.error = err.message;
         toast('合成失败：' + err.message, 'err', 6000);
       }
-      e.currentTarget.disabled = false;
+      b.disabled = false;
       refresh(node); save();
     } }, '一键合成成片');
 
@@ -420,7 +421,8 @@ export function renderEditor(root, params) {
       h('button', {
         class: 'node-btn primary', style: { width: '100%', justifyContent: 'center', marginBottom: '10px' },
         onclick: async e => {
-          e.currentTarget.disabled = true; e.currentTarget.textContent = '加载 3D 引擎…';
+          const b = e.currentTarget;
+          b.disabled = true; b.textContent = '加载 3D 引擎…';
           try {
             await openDirector({
               onCapture: url => {
@@ -430,7 +432,7 @@ export function renderEditor(root, params) {
               }
             });
           } catch (err) { toast('打开失败：' + err.message, 'err', 4500); }
-          e.currentTarget.disabled = false; e.currentTarget.textContent = '打开导演台（摆位 · 机位 · 截图）';
+          b.disabled = false; b.textContent = '打开导演台（摆位 · 机位 · 截图）';
         }
       }, '打开导演台（摆位 · 机位 · 截图）'),
       h('div', { class: 'node-try' }, ...SHOTS.map(s => h('button', {

@@ -35,8 +35,10 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* Toast */
+/* 容器缺失时自建，避免在缺少 #toast-root 骨架的页面里静默抛错、把调用方后续逻辑一起带崩 */
 export function toast(msg, type = '', ms = 2600) {
-  const root = $('#toast-root');
+  let root = $('#toast-root');
+  if (!root) { root = h('div', { id: 'toast-root', class: 'toast-root' }); document.body.append(root); }
   const t = h('div', { class: 'toast ' + type }, msg);
   root.append(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = '.25s'; setTimeout(() => t.remove(), 260); }, ms);
@@ -57,7 +59,9 @@ export function modal({ title, body, foot, large = false, onClose } = {}) {
     foot ? h('div', { class: 'modal-foot' }, foot) : null
   );
   mask.addEventListener('mousedown', e => { if (e.target === mask) close(); });
-  $('#modal-root').append(mask);
+  let mroot = $('#modal-root');
+  if (!mroot) { mroot = h('div', { id: 'modal-root' }); document.body.append(mroot); }
+  mroot.append(mask);
   return { close, box, body: $('.modal-body', box) };
 }
 

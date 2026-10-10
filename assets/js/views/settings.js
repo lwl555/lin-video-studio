@@ -35,21 +35,42 @@ export function render(root) {
     }
     for (const p of all) {
       const keyInput = h('input', { class: 'form-input', type: 'password', value: p.apiKey || '', placeholder: 'sk-...' });
+      /* 测试结果就地显示，不依赖会消失的 toast */
+      const testLine = h('div', { style: { display: 'none', fontSize: '12.5px', margin: '10px 0 0', padding: '9px 12px', borderRadius: '8px', lineHeight: '1.6', wordBreak: 'break-all' } });
       const card = h('div', { class: 'provider-card' },
         h('div', { class: 'provider-head' },
           h('div', { class: 'provider-name' }, h('span', { class: 'status-dot' + (p.enabled !== false ? ' on' : '') }), p.name,
             h('span', { class: 'tag' }, TYPE_LABEL[p.type])),
           h('button', { class: 'node-btn', onclick: async e => {
-            e.currentTarget.textContent = '测试中…';
-            const r = await testProvider(p);
-            e.currentTarget.textContent = '测试';
-            toast(r.msg, r.ok ? 'ok' : 'err', 4500);
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = '测试中…';
+            testLine.style.display = 'none';
+            try {
+              /* 闭包里的 p 是渲染时的旧快照，必须从 store 取用户刚填的最新值 */
+              const r = await testProvider(providers.get(p.id) || p);
+              testLine.style.display = 'block';
+              testLine.style.background = r.ok ? '#E9F9F6' : '#FEF2F2';
+              testLine.style.color = r.ok ? '#0E7C6E' : 'var(--err)';
+              testLine.textContent = (r.ok ? '✓ ' : '✗ ') + r.msg;
+              toast(r.ok ? '连接正常' : '连接失败', r.ok ? 'ok' : 'err', 3500);
+            } catch (err) {
+              testLine.style.display = 'block';
+              testLine.style.background = '#FEF2F2';
+              testLine.style.color = 'var(--err)';
+              testLine.textContent = '✗ 测试异常：' + String(err?.message || err);
+            } finally {
+              btn.disabled = false; btn.textContent = '测试';
+            }
           } }, '测试'),
-          h('button', { class: 'node-btn', onclick: () => { providers.update(p.id, { enabled: p.enabled === false }); drawList(); } },
-            p.enabled === false ? '启用' : '停用'),
+          h('button', { class: 'node-btn', onclick: () => {
+            const cur = providers.get(p.id) || p;
+            providers.update(p.id, { enabled: cur.enabled === false });
+            drawList();
+          } }, p.enabled === false ? '启用' : '停用'),
           h('button', { class: 'node-btn', onclick: async () => {
             if (await confirm(`删除「${p.name}」？`)) { providers.remove(p.id); drawList(); }
           } }, '删除')),
+        testLine,
         h('div', { class: 'form-row' },
           h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL'),
             h('input', { class: 'form-input', value: p.baseUrl || '', placeholder: 'https://api.example.com/v1',
@@ -159,12 +180,18 @@ export function render(root) {
             store.save(); draw(); toast(`已清理 ${n} 个旧素材`, 'ok');
           } }, '清理最旧素材（留最新 20 个）'),
           h('button', { class: 'btn-ghost', onclick: async e => {
-            e.currentTarget.disabled = true;
-            const tip = toast('开始压缩…');
-            const saved = await compressAllImages(store.state, s => { /* 静默 */ });
-            store.save(); draw();
-            e.currentTarget.disabled = false;
-            toast(saved > 0 ? `压缩完成，省下 ${fmtKB(saved)}` : '素材都已经足够小，无需压缩', 'ok', 3500);
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+              toast('开始压缩…');
+              const saved = await compressAllImages(store.state, () => { /* 静默 */ });
+              store.save(); draw();
+              toast(saved > 0 ? `压缩完成，省下 ${fmtKB(saved)}` : '素材都已经足够小，无需压缩', 'ok', 3500);
+            } catch (err) {
+              toast('压缩失败：' + String(err?.message || err), 'err');
+            } finally {
+              btn.disabled = false;
+            }
           } }, '一键压缩全部图片'),
           h('button', { class: 'btn-ghost btn-danger', onclick: async () => {
             if (!await confirm('清空全部本地素材（图片/视频缓存）？文字记录会完整保留，素材无法恢复。')) return;

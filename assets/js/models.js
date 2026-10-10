@@ -36,27 +36,54 @@ export const providers = {
 };
 
 /* ---------- 请求核心：直连或经 Supabase 代理 ---------- */
-async function request(url, { method = 'POST', headers = {}, body } = {}) {
+/* 任何请求都必须有超时，否则网络层静默挂起时 UI 会永远停在「进行中」 */
+const DEFAULT_TIMEOUT = 60000;
+
+async function request(url, { method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
   const px = store.state.proxy;
-  if (px.enabled && px.url) {
-    const r = await fetch(px.url.replace(/\/$/, '') + '/fetch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(px.anon ? { Authorization: `Bearer ${px.anon}` } : {}) },
-      body: JSON.stringify({ url, method, headers, body })
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout);
+  const secs = Math.round(timeout / 1000);
+  try {
+    if (px.enabled && px.url) {
+      const r = await fetch(px.url.replace(/\/$/, '') + '/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(px.anon ? { Authorization: `Bearer ${px.anon}` } : {}) },
+        body: JSON.stringify({ url, method, headers, body }),
+        signal: ctl.signal
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) throw new Error(j.error || `代理请求失败 ${r.status}`);
+      return j;   // {status, body}
+    }
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctl.signal
     });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.error) throw new Error(j.error || `代理请求失败 ${r.status}`);
-    return j;   // {status, body}
+    const txt = await r.text();
+    if (!r.ok) {
+      let hint = '';
+      if (r.status === 401 || r.status === 403) hint = '（API Key 无效或没有该模型权限）';
+      else if (r.status === 404) hint = '（模型名或 Base URL 路径不对）';
+      else if (r.status === 429) hint = '（触发限流，等 1 分钟再试）';
+      throw new Error(`HTTP ${r.status}${hint} ${txt.slice(0, 240)}`);
+    }
+    let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
+    return { status: r.status, body: j };
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error(`请求超时（${secs} 秒无响应）。检查网络，或在下方「后端代理」里填一个转发地址。`);
+    }
+    /* 浏览器对 CORS 预检失败 / DNS 失败 / 断网 统一抛 TypeError，这里翻译成人话 */
+    if (e instanceof TypeError) {
+      throw new Error(`连不上模型服务（${e.message || '网络错误'}）。常见原因：① Base URL 写错；② 该服务未开放浏览器跨域（CORS），需在下方配置后端代理。`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  const r = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`HTTP ${r.status} ${txt.slice(0, 300)}`);
-  let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
-  return { status: r.status, body: j };
 }
 
 function authHeaders(key) {
@@ -65,7 +92,7 @@ function authHeaders(key) {
 const norm = b => (b && b.baseUrl ? b.baseUrl.replace(/\/$/, '') : '');
 
 /* ---------- 文本 ---------- */
-export async function chat(prompt, { provider, system = '', json = false, temperature = 0.8, images = [] } = {}) {
+export async function chat(prompt, { provider, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
   const p = provider || providers.defaultOf('text');
   if (!p) throw new Error('尚未接入文本模型，请到「模型接入」添加');
   const url = `${norm(p)}/chat/completions`;
@@ -79,7 +106,7 @@ export async function chat(prompt, { provider, system = '', json = false, temper
     stream: false
   };
   if (json) body.response_format = { type: 'json_object' };
-  const res = await request(url, { headers: authHeaders(p.apiKey), body });
+  const res = await request(url, { headers: authHeaders(p.apiKey), body, timeout });
   const b = res.body || {};
   const text = b?.choices?.[0]?.message?.content
     ?? b?.choices?.[0]?.text
@@ -103,7 +130,7 @@ export async function genImage(prompt, { provider, size = '1024x1024', n = 1, im
   const path = images.length ? (p.editPath || '/images/generations') : '/images/generations';
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
-  const res = await request(base + path, { headers: authHeaders(p.apiKey), body });
+  const res = await request(base + path, { headers: authHeaders(p.apiKey), body, timeout: 180000 });
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
@@ -133,7 +160,7 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
   }
 
   onProgress?.('提交任务…');
-  const res = await request(base + submitPath, { headers: authHeaders(p.apiKey), body });
+  const res = await request(base + submitPath, { headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
 
   const direct = b?.video_url || b?.url || b?.data?.video_url || b?.data?.url || b?.output?.video_url;
@@ -148,7 +175,7 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
     let s;
     try {
       s = await request(`${base}${queryPath}?id=${encodeURIComponent(id)}`, {
-        method: 'GET', headers: authHeaders(p.apiKey)
+        method: 'GET', headers: authHeaders(p.apiKey), timeout: 30000
       });
     } catch (e) { continue; }
     const sb = s.body || {};
@@ -168,18 +195,23 @@ export async function genVideo(prompt, { provider, images = [], duration = 5, ra
 
 /* ---------- 连通性自检 ---------- */
 export async function testProvider(p) {
+  /* 先做本地校验，省掉一次注定失败的请求 */
+  if (!p.baseUrl) return { ok: false, msg: '还没填 Base URL' };
+  if (!p.model) return { ok: false, msg: '还没填模型名' };
+  if (p.type !== 'video' && !p.apiKey) return { ok: false, msg: '还没填 API Key' };
+  const t0 = Date.now();
   try {
     if (p.type === 'text') {
-      const t = await chat('回复OK两个字', { provider: p });
-      return { ok: true, msg: '文本可用：' + String(t).slice(0, 40) };
+      const t = await chat('回复OK两个字', { provider: p, timeout: 30000 });
+      return { ok: true, msg: `连通正常（${Date.now() - t0}ms）：` + String(t).replace(/\s+/g, ' ').slice(0, 30) };
     }
     if (p.type === 'image') {
       const r = await genImage('a small white cat', { provider: p, size: '512x512' });
-      return { ok: true, msg: '图像可用', url: r.url };
+      return { ok: true, msg: `图像可用（${Date.now() - t0}ms）`, url: r.url };
     }
     if (p.type === 'video') {
       return { ok: true, msg: '配置已保存（视频测试会消耗额度，已跳过实际生成）' };
     }
-  } catch (e) { return { ok: false, msg: e.message }; }
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
   return { ok: false, msg: '未知类型' };
 }

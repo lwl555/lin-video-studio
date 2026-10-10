@@ -71,12 +71,13 @@ function renderProject(root, proj) {
     content.append(h('div', { class: 'page-sub' }, '第一步：让模型把你的创意整理成一份可执行的制作方案'), box);
     if (!proj.req) {
       box.append(h('button', { class: 'btn-primary', onclick: async e => {
-        e.currentTarget.disabled = true; e.currentTarget.textContent = '分析中…';
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.textContent = '分析中…';
         try {
           const r = await chat(`请把下面的创意整理成制作方案，只输出 JSON：{"title":"标题","logline":"一句话梗概","duration":"总时长如60秒","ratio":"16:9 或 9:16","style":"视觉风格"}\n\n创意：${proj.logline}`, { json: true });
           proj.req = { title: r.title || '未命名', logline: r.logline || '', duration: r.duration || '60秒', ratio: r.ratio || '16:9', style: r.style || '' };
           store.save(); draw();
-        } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '生成制作方案'; }
+        } catch (err) { toast('失败：' + err.message, 'err'); btn.disabled = false; btn.textContent = '生成制作方案'; }
       } }, '生成制作方案'));
       return;
     }
@@ -95,11 +96,12 @@ function renderProject(root, proj) {
     content.append(h('div', { class: 'page-sub' }, '第二步：角色设定、场景与全局基调'));
     if (!proj.outline) {
       content.append(h('button', { class: 'btn-primary', onclick: async e => {
-        e.currentTarget.disabled = true; e.currentTarget.textContent = '生成中…';
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.textContent = '生成中…';
         try {
           const r = await chat(`根据以下方案写剧本大纲，只输出 JSON：{"synopsis":"剧情梗概","characters":[{"name":"","age":"","look":"外貌","persona":"性格"}],"scenes":[{"name":"","env":"环境","light":"光线氛围"}],"props":[{"name":"","desc":""}]}\n\n方案：${JSON.stringify(proj.req)}\n创意：${proj.logline}`, { json: true });
           proj.outline = r; store.save(); draw();
-        } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '生成大纲'; }
+        } catch (err) { toast('失败：' + err.message, 'err'); btn.disabled = false; btn.textContent = '生成大纲'; }
       } }, '生成大纲'));
       return;
     }
@@ -128,7 +130,8 @@ function renderProject(root, proj) {
       if (c.image) imgBox.append(h('img', { src: c.image, style: { width: '100%', height: '100%', objectFit: 'cover' } }));
       else imgBox.append(h('span', { class: 'ico', html: icon('image', 28) }));
       const btn = h('button', { class: 'node-btn', style: { marginTop: '8px' }, onclick: async e => {
-        e.currentTarget.disabled = true; e.currentTarget.textContent = '生成中…';
+        const b = e.currentTarget;
+        b.disabled = true; b.textContent = '生成中…';
         try {
           const prompt = c.kind === '角色'
             ? `角色设定图：${c.name}，${c.age || ''}，${c.look || ''}，${c.persona || ''}，三视图，白底，清晰正面全身`
@@ -137,7 +140,7 @@ function renderProject(root, proj) {
           c.image = r.url; store.save();
           store.add('assets', { id: uid('a'), name: c.name, type: c.kind === '角色' ? 'character' : 'scene', desc: [c.look, c.env, c.persona, c.light].filter(Boolean).join(' · '), url: r.url, createdAt: Date.now() });
           draw();
-        } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '生成参考图'; }
+        } catch (err) { toast('失败：' + err.message, 'err'); b.disabled = false; b.textContent = '生成参考图'; }
       } }, c.image ? '重新生成' : '生成参考图');
       wrap.append(h('div', { class: 'asset-card' }, imgBox,
         h('div', { class: 'asset-body' }, h('div', { class: 'asset-name' }, `${c.name} · ${c.kind}`), btn)));
@@ -151,12 +154,13 @@ function renderProject(root, proj) {
     content.append(h('div', { class: 'page-sub' }, '第四步：把剧本拆成镜头，逐条确认景别、运镜、台词与时长'));
     if (!proj.storyboard.length) {
       content.append(h('button', { class: 'btn-primary', onclick: async e => {
-        e.currentTarget.disabled = true; e.currentTarget.textContent = '拆解中…';
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.textContent = '拆解中…';
         try {
           const r = await chat(`根据以下内容拆解分镜，只输出 JSON 数组（6-8 个镜头）：[{"n":1,"desc":"画面内容","shot":"景别如中景","camera":"运镜如缓慢推进","dialogue":"台词或空","dur":5}]\n\n方案：${JSON.stringify(proj.req)}\n大纲：${JSON.stringify(proj.outline)}`, { json: true });
           proj.storyboard = (Array.isArray(r) ? r : r.shots || []).map((s, i) => ({ n: s.n || i + 1, desc: s.desc || '', shot: s.shot || '', camera: s.camera || '', dialogue: s.dialogue || '', dur: s.dur || 5 }));
           store.save(); draw();
-        } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '生成分镜'; }
+        } catch (err) { toast('失败：' + err.message, 'err'); btn.disabled = false; btn.textContent = '生成分镜'; }
       } }, '生成分镜'));
       return;
     }
@@ -183,16 +187,17 @@ function renderProject(root, proj) {
     content.append(h('div', { class: 'page-sub' }, '第五步：为每个镜头生成关键帧图，崩掉的镜头单独重绘，不用全部重来'));
     if (!proj.storyboard.length) { content.append(h('div', { class: 'empty' }, '请先完成第四步「分镜脚本」')); return; }
     const btnAll = h('button', { class: 'btn-primary', style: { marginBottom: '14px' }, onclick: async e => {
-      e.currentTarget.disabled = true;
+      const btn = e.currentTarget;
+      btn.disabled = true;
       for (const s of proj.storyboard) {
         if (s.frame) continue;
-        e.currentTarget.textContent = `生成中 ${s.n}/${proj.storyboard.length}…`;
+        btn.textContent = `生成中 ${s.n}/${proj.storyboard.length}…`;
         try {
           const r = await genImage(`${s.desc}，${s.shot}，${proj.req?.style || ''}，电影感画面`, { size: '1280x720' });
           s.frame = r.url; store.save(); draw();
         } catch (err) { toast(`镜头 ${s.n} 失败：${err.message}`, 'err'); }
       }
-      e.currentTarget.disabled = false; e.currentTarget.textContent = '一键生成全部关键帧';
+      btn.disabled = false; btn.textContent = '一键生成全部关键帧';
     } }, '一键生成全部关键帧');
     content.append(btnAll);
     proj.storyboard.forEach(s => {
@@ -203,11 +208,12 @@ function renderProject(root, proj) {
         h('div', { class: 'shot-side' },
           h('div', { class: 'shot-frame' }, s.frame ? h('img', { src: s.frame }) : h('div', { class: 'stage-ph', style: { fontSize: '11px' } }, '待生成')),
           h('button', { class: 'node-btn', style: { marginTop: '6px', width: '100%', justifyContent: 'center' }, onclick: async e => {
-            e.currentTarget.disabled = true; e.currentTarget.textContent = '…';
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = '…';
             try {
               const r = await genImage(`${s.desc}，${s.shot}，电影感`, { size: '1280x720' });
               s.frame = r.url; store.save(); draw();
-            } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '重绘'; }
+            } catch (err) { toast('失败：' + err.message, 'err'); btn.disabled = false; btn.textContent = '重绘'; }
           } }, s.frame ? '重绘' : '生成'))));
     });
   }
@@ -218,16 +224,17 @@ function renderProject(root, proj) {
     content.append(h('div', { class: 'page-sub' }, '第六步：把关键帧转成视频片段，然后合成成片'));
     if (!proj.storyboard.length) { content.append(h('div', { class: 'empty' }, '请先完成分镜与关键帧')); return; }
     const btnAll = h('button', { class: 'btn-primary', style: { marginBottom: '14px' }, onclick: async e => {
-      e.currentTarget.disabled = true;
+      const btn = e.currentTarget;
+      btn.disabled = true;
       for (const s of proj.storyboard) {
         if (s.video) continue;
-        e.currentTarget.textContent = `生成片段 ${s.n}/${proj.storyboard.length}…`;
+        btn.textContent = `生成片段 ${s.n}/${proj.storyboard.length}…`;
         try {
           const r = await genVideo(`${s.desc}，${s.camera || ''}`, { images: s.frame ? [s.frame] : [], duration: s.dur || 5, ratio: proj.req?.ratio || '16:9' });
           s.video = r.url; store.save(); draw();
         } catch (err) { toast(`镜头 ${s.n} 失败：${err.message}`, 'err'); }
       }
-      e.currentTarget.disabled = false; e.currentTarget.textContent = '一键生成全部视频片段';
+      btn.disabled = false; btn.textContent = '一键生成全部视频片段';
     } }, '一键生成全部视频片段');
     content.append(btnAll,
       h('div', { class: 'hint' }, `关键帧就绪 ${ready.length}/${proj.storyboard.length}　·　建议先用 Flash 类免费模型批量试错，定稿再用高清模型出片`));
@@ -240,11 +247,12 @@ function renderProject(root, proj) {
       h('div', { class: 'shot-side' },
         h('div', { class: 'shot-frame' }, s.video ? h('video', { src: s.video, muted: true, controls: true }) : (s.frame ? h('img', { src: s.frame }) : null)),
         h('button', { class: 'node-btn', style: { marginTop: '6px', width: '100%', justifyContent: 'center' }, onclick: async e => {
-          e.currentTarget.disabled = true; e.currentTarget.textContent = '…';
+          const btn = e.currentTarget;
+          btn.disabled = true; btn.textContent = '…';
           try {
             const r = await genVideo(`${s.desc}，${s.camera || ''}`, { images: s.frame ? [s.frame] : [], duration: s.dur || 5, ratio: proj.req?.ratio || '16:9' });
             s.video = r.url; store.save(); draw();
-          } catch (err) { toast('失败：' + err.message, 'err'); e.currentTarget.disabled = false; e.currentTarget.textContent = '生成片段'; }
+          } catch (err) { toast('失败：' + err.message, 'err'); btn.disabled = false; btn.textContent = '生成片段'; }
         } }, s.video ? '重生成' : '生成片段')))));
 
     const all = proj.storyboard.filter(s => s.video);
@@ -266,7 +274,8 @@ function renderProject(root, proj) {
         bgmSlot,
         h('button', { class: 'btn-primary', onclick: async e => {
           if (!all.length) return toast('还没有视频片段', 'err');
-          e.currentTarget.disabled = true;
+          const btn = e.currentTarget;
+          btn.disabled = true;
           try {
             const { concatVideos } = await import('../media.js');
             const r = await concatVideos(all.map(s => s.video), {
@@ -289,7 +298,7 @@ function renderProject(root, proj) {
             statusLine.textContent = '';
             toast('合成失败：' + err.message, 'err', 6000);
           }
-          e.currentTarget.disabled = false;
+          btn.disabled = false;
         } }, '一键合成 MP4'),
         h('button', { class: 'btn-ghost', onclick: () => {
           const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });
