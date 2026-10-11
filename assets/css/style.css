@@ -324,9 +324,16 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .node-btn:disabled{opacity:.5;cursor:not-allowed}
 .node-try{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
 .node-try .try-h{font-size:11px;color:var(--txt-3);margin-bottom:4px}
+/* 尝试区分组标题：区分「写文本 / 生成方式 / 往下走一步」，不再一坨平铺 */
+.node-try .try-g{font-size:10.5px;color:var(--txt-3);margin:1px 0 3px;letter-spacing:.02em}
+.node-try .try-g+.try-g{margin-top:9px}
 .try-chip{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:8px;font-size:12px;
   color:var(--txt-2);text-align:left;transition:.15s}
 .try-chip:hover{background:var(--bg);color:var(--txt)}
+/* 会新建下游节点的条目：右侧箭头提示「这一步是把东西交给下一个节点」 */
+.try-chip.branch::after{content:'→';margin-left:auto;font-size:11px;opacity:.4}
+.try-chip.soon{opacity:.55}
+.try-chip.soon:hover{background:transparent;color:var(--txt-2)}
 .node-status{font-size:11px;color:var(--warn);padding:6px 12px;display:flex;align-items:center;gap:6px}
 .spinner{width:12px;height:12px;border:2px solid rgba(0,0,0,.12);border-top-color:var(--brand);
   border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}

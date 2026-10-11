@@ -18,14 +18,26 @@ export const NODE_REGISTRY = {
   upload: { label: '素材', icon: '素' }
 };
 export function registerNodeType(type, meta) { NODE_REGISTRY[type] = meta; }
+/* 「尝试」快捷区：按用途分组，不把「写文本 / 生成图片 / 生成视频」混成一坨
+   mode 取值：
+     prompt       追加进提示词再生成（文本类指令、画面预设）
+     run / run:pure  直接生成（run:pure = 不带上游参考图，纯文生图/文生视频）
+     frames       把上游两张图当首尾帧填好再生成
+     branch:image|video  新建下游节点并连线（不改当前节点类型）
+     soon         接口预留，未开放 */
 const TRY = {
-  text: ['自己编写', '一句话生成剧本', '扩写成分镜脚本', '文生图', '文生视频', '图片反推提示词'],
-  image: ['文生图', '图生图', '角色四视图', '场景设定图', '局部重绘'],
-  video: ['文生视频', '图生视频', '首尾帧补间', '全能参考'],
-  audio: ['上传音频', '生成背景音乐', '生成音效'],
-  merge: ['合成成片', '预览片段'],
-  director: ['机位预演', '角色站位'],
-  upload: ['上传文件', '从资产库添加']
+  text: [
+    { g: '写文本', items: [['一句话生成剧本', 'prompt'], ['扩写成分镜脚本', 'prompt'], ['图片反推提示词', 'prompt']] },
+    { g: '接着往下做', items: [['生成图片节点', 'branch:image'], ['生成视频节点', 'branch:video']] }
+  ],
+  image: [
+    { g: '生成方式', items: [['文生图（不用参考图）', 'run:pure'], ['图生图（用上游参考）', 'run']] },
+    { g: '画面预设', items: [['角色四视图', 'prompt'], ['场景设定图', 'prompt'], ['局部重绘', 'prompt']] }
+  ],
+  video: [
+    { g: '生成方式', items: [['文生视频（纯文字）', 'run:pure'], ['图生视频（带首帧）', 'run'], ['首尾帧补间', 'frames']] }
+  ],
+  audio: [], merge: [], director: [], upload: []
 };
 
 /* ---------------- 项目列表 ---------------- */
@@ -523,13 +535,9 @@ export function renderEditor(root, params) {
     if (statusEl) body.append(statusEl);
     if (errEl) body.append(errEl);
 
-    /* 尝试区 */
-    const tries = TRY[node.type] || TRY.text;
-    const tryBox = h('div', { class: 'node-try' }, h('div', { class: 'try-h' }, '尝试'));
-    for (const t of tries.slice(0, 5)) {
-      tryBox.append(h('button', { class: 'try-chip', onclick: () => runTry(node, t, refresh) }, '· ' + t));
-    }
-    if (node.type !== 'merge') body.append(tryBox);
+    /* 尝试区：按用途分组渲染（只有一组时不显示组标题，免得叠字） */
+    const tryBox = renderTry(node, refresh);
+    if (tryBox) body.append(tryBox);
 
     /* 内容区 */
     if (node.media?.url) {
@@ -563,13 +571,32 @@ export function renderEditor(root, params) {
       actions.append(h('button', {
         class: 'node-btn',
         onclick: () => toast('配音 / 音色克隆 / 音效生成：接口已预留，接入 TTS 模型后开放', 'ok', 4200)
-      }, '配音（开发中）'));
+      }, '配音 · 配乐（开发中）'));
     }
     actions.append(
-      h('button', { class: 'node-btn', title: '收起面板，只看结果', onclick: deselect }, '收起'),
-      h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
+      h('button', { class: 'node-btn', title: '收起面板，只看结果', onclick: deselect }, '收起'));
+    /* 没有素材就不用给「存为资产」占位，按钮越少越清楚 */
+    if (node.media?.url) actions.append(h('button', { class: 'node-btn', onclick: () => toAsset(node) }, '存为资产'));
     paintProgress(node);
   }
+
+  /* 「尝试」区的分组渲染：有组名就显示组名，避免一坨平铺 */
+  function renderTry(node, refresh) {
+    const groups = (TRY[node.type] || []).filter(g => g.items.length);
+    if (!groups.length) return null;
+    const box = h('div', { class: 'node-try' });
+    for (const g of groups) {
+      if (g.g) box.append(h('div', { class: 'try-g' }, g.g));
+      for (const [label, mode] of g.items) {
+        const soon = mode === 'soon';
+        box.append(h('button', {
+          class: 'try-chip' + (mode.startsWith('branch') ? ' branch' : '') + (soon ? ' soon' : ''),
+          title: soon ? '接口已预留，接入模型后开放' : null,
+          onclick: () => runTry(node, label, mode, refresh)
+        }, '· ' + label));
+      }
+    }
+    return box;  }
 
   function renderVideoOpts(node, refresh) {
     const wrap = h('div', { class: 'video-opts' });
@@ -737,14 +764,34 @@ export function renderEditor(root, params) {
   }
 
   /* ---- 生成 ---- */
-  async function runTry(node, label, refresh) {
-    if (label === '自己编写') { node.prompt = node.prompt || ''; refresh(node); return; }
-    if (label === '上传文件' || label === '上传音频') return uploadToNode(node, refresh);
-    if (label === '从资产库添加') return pickAsset(node, refresh);
-    if (label === '文生图') { node.type = 'image'; return run(node, refresh, '根据上面的描述生成一张图'); }
-    if (label === '文生视频') { node.type = 'video'; return run(node, refresh); }
+  async function runTry(node, label, mode, refresh) {
+    if (mode === 'soon') return toast('配音 / 音色克隆 / 音效生成：接口已预留，接入 TTS 模型后开放', 'ok', 3600);
+    /* 「生成图片/视频节点」= 往下接一个新的下游节点，不把当前文本节点变成别的类型 */
+    if (mode.startsWith('branch:')) return branchNode(node, mode.split(':')[1], refresh);
+    /* 首尾帧补间：把上游两张图自动放进首帧/尾帧槽位再生成 */
+    if (mode === 'frames') {
+      const imgs = upstream(node).map(u => u.media?.url).filter(Boolean);
+      if (imgs.length < 2) return toast('先连两张图片节点过来，才能用首尾帧补间', 'err', 3600);
+      node.firstFrame = imgs[0]; node.lastFrame = imgs[1]; refresh(node);
+      return run(node, refresh, '', { refs: false });
+    }
+    if (mode === 'run' || mode === 'run:pure') return run(node, refresh, '', { refs: mode !== 'run:pure' });
     node.prompt = (node.prompt ? node.prompt + '\n' : '') + label;
     return run(node, refresh);
+  }
+  function branchNode(from, type, refresh) {
+    const el = nodeEls.get(from.id);
+    const w = el?.offsetWidth || 320;
+    pushUndo();
+    const n = {
+      id: uid('n'), type, x: from.x + w + 140, y: from.y + 20,
+      title: NODE_REGISTRY[type].label + '节点', prompt: '', content: '', media: null
+    };
+    proj.nodes.push(n);
+    proj.edges.push({ id: uid('e'), from: from.id, to: n.id });
+    refresh(); select(n); drawEdges(); save();
+    toast(`已新建「${NODE_REGISTRY[type].label}节点」，并接在「${from.title || '上游'}」后面`, 'ok', 2400);
+    return n;
   }
   function pickAsset(node, refresh) {
     const list = store.list('assets').filter(a => a.url);
@@ -780,11 +827,12 @@ export function renderEditor(root, params) {
     box.querySelector('.run-bar i').style.width = Math.max(8, Math.min(100, p)) + '%';
   }
 
-  async function run(node, refresh, extra = '') {
+  async function run(node, refresh, extra = '', opts = {}) {
     const type = node.type === 'merge' ? 'merge' : node.type === 'director' ? 'image' : node.type;
     const prompt = [node.prompt, extra].filter(Boolean).join('\n');
     const ups = upstream(node);
-    const refImgs = ups.map(u => u.media?.url).filter(Boolean);
+    /* opts.refs === false：走纯文生图 / 纯文生视频，不吃上游参考图 */
+    const refImgs = opts.refs === false ? [] : ups.map(u => u.media?.url).filter(Boolean);
     const t0 = Date.now();
     const step = (txt, pct) => { node.status = txt; if (pct != null) node.progress = pct; paintProgress(node); };
 

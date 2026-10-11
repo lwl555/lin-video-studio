@@ -6,3 +6,10 @@ node_modules/
 _preview_*.png
 preview-login.html
 _chk_*.mjs
+# 探针 / 临时脚本（_api_push*.py、_gen_*.py 里含密钥，绝不能进仓库）
+_probe*.mjs
+_api_push*.py
+_gen_*.py
+_p*.log
+_s_*.png
+.pavo-probe*/
