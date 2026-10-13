@@ -297,7 +297,10 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .edge{stroke:#C7CBD2;stroke-width:1.6;fill:none}
 .edge.active{stroke:var(--brand);stroke-width:2}
 .node{position:absolute;width:300px;background:#fff;border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:var(--shadow-s);display:flex;flex-direction:column;user-select:none;transition:box-shadow .15s}
+  box-shadow:var(--shadow-s);display:flex;flex-direction:column;user-select:none;transition:box-shadow .15s;
+  cursor:grab}
+.node.dragging{z-index:20;cursor:grabbing;box-shadow:0 16px 34px rgba(17,17,17,.18);transition:none}
+.canvas-wrap.dragging,.canvas-wrap.dragging .node{cursor:grabbing}
 .node.selected{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand),0 8px 22px rgba(23,184,166,.14)}
 .node.running{border-color:var(--warn)}
 .node-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);
@@ -348,8 +351,9 @@ a{cursor:pointer;text-decoration:none;color:inherit}
   border:1px solid #FECACA;color:var(--err);font-size:12px;display:none;align-items:center;justify-content:center;z-index:4}
 .node:hover .node-del{display:flex}
 
-/* 折叠态（未选中）：只露结果预览，点击才展开编辑面板 */
-.node.collapsed{cursor:pointer}
+/* 折叠态（未选中）：只露结果预览，点击展开编辑面板；按住整块都能拖 */
+.node.collapsed{cursor:grab}
+.node.collapsed:active{cursor:grabbing}
 .node.collapsed .node-body{padding:8px;display:flex;flex-direction:column;gap:8px}
 .node.collapsed .node-media img,.node.collapsed .node-media video{max-height:300px}
 .node.collapsed .node-status{padding:6px 2px 0}

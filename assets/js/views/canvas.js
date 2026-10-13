@@ -349,21 +349,41 @@ export function renderEditor(root, params) {
       select(node);
     }, true);
 
-    /* 拖动 */
-    el.querySelector('.node-head').addEventListener('mousedown', e => {
-      if (e.target.closest('.node-model')) return;
+    /* 拖动：整个节点都能拖（只有按钮/输入框/端口/播放键除外），不用再找那一小条标题栏。
+       用 pointer 事件 + 指针捕获：拖到窗口外再拉回来也不丢；移动中只改 left/top、不碰节点内容，所以跟手不卡。
+       触屏只在标题栏起拖，免得和画布平移、节点内滚动打架。 */
+    const NO_DRAG = 'button,a,input,textarea,select,video,.node-port,.media-play,.node-model,.ref-slot,.node-del,.try-chip';
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      if (e.target.closest(NO_DRAG)) return;
+      if (e.pointerType !== 'mouse' && !e.target.closest('.node-head')) return;
       e.stopPropagation();
       const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
-      let pushed = false;
+      let pushed = false, moved = false;
       const move = ev => {
-        if (!pushed) { pushUndo(); pushed = true; }
-        node.x = ox + (ev.clientX - sx) / vp.zoom;
-        node.y = oy + (ev.clientY - sy) / vp.zoom;
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (!moved) {
+          if (Math.abs(dx) + Math.abs(dy) < 3) return;   /* 手抖几像素不算拖，避免误写撤销栈 */
+          moved = true; pushed = true;
+          el.classList.add('dragging'); wrap.classList.add('dragging');
+          pushUndo();
+        }
+        node.x = ox + dx / vp.zoom;
+        node.y = oy + dy / vp.zoom;
         el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
         drawEdges(); scheduleMinimap();
       };
-      const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(); };
-      document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+      const up = () => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        el.classList.remove('dragging'); wrap.classList.remove('dragging');
+        if (moved && pushed) save();
+      };
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* 某些环境不支持，忽略 */ }
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
     });
 
     /* 连线：拖拽时高亮候选节点、吸附到输入端口、拖到空白处可直接建新节点连上 */
@@ -900,6 +920,10 @@ export function renderEditor(root, params) {
   }
 
   /* ---- 画布交互 ---- */
+  /* 兜底：画布内一律禁止浏览器原生拖拽（图片/链接/选中文字），
+     否则按住节点里的图拖会拖出「幽灵图」，节点反而不动 */
+  wrap.addEventListener('dragstart', e => e.preventDefault());
+
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.node') || e.target.closest('.canvas-toolbar') || e.target.closest('.canvas-topbar')) return;
     deselect();

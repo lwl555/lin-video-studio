@@ -14,7 +14,11 @@ export function imgErr(e) {
 /* DOM 构建助手 */
 export function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
-  if (String(tag).toLowerCase() === 'img') el.addEventListener('error', imgErr);
+  const t = String(tag).toLowerCase();
+  if (t === 'img') el.addEventListener('error', imgErr);
+  /* 图片/视频默认关掉浏览器「原生拖拽」：否则用户按住画布节点里的图拖动时，
+     浏览器拖走的是那张图（拖出一个半透明幽灵图），而不是移动节点 */
+  if ((t === 'img' || t === 'video') && !(props || {}).draggable) el.draggable = false;
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
