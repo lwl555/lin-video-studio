@@ -165,4 +165,6 @@ function bootApp() {
   });
 }
 
-initAuth();
+/* 等模块图求值完成再启动：views/* 与 app.js 之间存在循环 import，
+   直接在模块顶层启动会在 home.js 还没求值完时渲染，读到 TDZ 里的常量（MODES）报错。 */
+queueMicrotask(initAuth);

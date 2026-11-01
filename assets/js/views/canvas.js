@@ -80,6 +80,9 @@ export function renderEditor(root, params) {
   const stage = h('div', { class: 'canvas-viewport' });
   const grid = h('div', { class: 'canvas-grid' });
   const wrap = h('div', { class: 'canvas-wrap' }, grid, stage);
+  /* 对齐参考线层：平时是空的，只在拖动对齐的瞬间出现 */
+  const guides = h('div', { class: 'guides' });
+  stage.append(guides);
   const nodeEls = new Map();
   let selected = null, linking = null, tempLine = null;
 
@@ -219,6 +222,42 @@ export function renderEditor(root, params) {
     const w = el.offsetWidth || 300, hh = el.offsetHeight || 160;
     return side === 'out' ? { x: node.x + w, y: node.y + hh / 2 } : { x: node.x, y: node.y + hh / 2 };
   }
+
+  /* ---- 拖动对齐吸附 ----
+     左/中/右、上/中/下 六种对齐，命中 6px（按缩放换算）内就吸过去并画一根青色参考线。
+     这是设计工具里最提手感的一件小事：排得整齐，用户才敢在画布上摆东西。 */
+  function snapDrag(el, node, nx, ny) {
+    const S = 6 / vp.zoom;
+    const w = el.offsetWidth, hh = el.offsetHeight;
+    let bx = null, by = null;
+    for (const o of proj.nodes) {
+      if (o.id === node.id) continue;
+      const oe = nodeEls.get(o.id); if (!oe) continue;
+      const ow = oe.offsetWidth, oh = oe.offsetHeight;
+      for (const [a, b] of [[0, 0], [w / 2, ow / 2], [w, ow]]) {
+        const t = o.x + b - a;
+        if (Math.abs(nx - t) <= S && (!bx || Math.abs(nx - t) < Math.abs(nx - bx.v))) {
+          bx = { v: t, at: o.x + b, y1: Math.min(o.y, ny), y2: Math.max(o.y + oh, ny + hh) };
+        }
+      }
+      for (const [a, b] of [[0, 0], [hh / 2, oh / 2], [hh, oh]]) {
+        const t = o.y + b - a;
+        if (Math.abs(ny - t) <= S && (!by || Math.abs(ny - t) < Math.abs(ny - by.v))) {
+          by = { v: t, at: o.y + b, x1: Math.min(o.x, nx), x2: Math.max(o.x + ow, nx + w) };
+        }
+      }
+    }
+    return { x: bx ? bx.v : nx, y: by ? by.v : ny, bx, by };
+  }
+  function paintGuides(s) {
+    guides.innerHTML = '';
+    /* 两头各探出 22px，否则参考线整根压在节点边框底下，等于没画 */
+    const X = 22;
+    if (s.bx) guides.append(h('div', { class: 'guide v', style: {
+      left: s.bx.at + 'px', top: (s.bx.y1 - X) + 'px', height: Math.max(1, s.bx.y2 - s.bx.y1 + X * 2) + 'px' } }));
+    if (s.by) guides.append(h('div', { class: 'guide h', style: {
+      top: s.by.at + 'px', left: (s.by.x1 - X) + 'px', width: Math.max(1, s.by.x2 - s.by.x1 + X * 2) + 'px' } }));
+  }
   const SVGNS = 'http://www.w3.org/2000/svg';
   /* 贝塞尔在 t=0.5 处的点（用于把删除按钮放到连线中点） */
   function bezMid(p1, p2, dx) {
@@ -235,12 +274,15 @@ export function renderEditor(root, params) {
     toast('已删除连线', 'ok', 1200);
   }
   let edgeRaf = 0;
+  /* 记住已经画过的连线：新出现的边播一次「弹一下」，老边不动 */
+  const drawnEdges = new Set();
   function drawEdges() {
     if (edgeRaf) cancelAnimationFrame(edgeRaf);
     edgeRaf = requestAnimationFrame(() => { edgeRaf = 0; drawEdgesNow(); });
   }
   function drawEdgesNow() {
     edgeLayer.innerHTML = '';
+    for (const id of [...drawnEdges]) if (!proj.edges.some(e => e.id === id)) drawnEdges.delete(id);
     /* 连线箭头（Pavo 风格） */
     const defs = document.createElementNS(SVGNS, 'defs');
     const mk = document.createElementNS(SVGNS, 'marker');
@@ -263,6 +305,11 @@ export function renderEditor(root, params) {
 
       const g = document.createElementNS(SVGNS, 'g');
       g.setAttribute('class', 'edge-g');
+      /* 上游节点正在跑 → 这条边变成流动虚线，表示「数据正在往这边走」 */
+      if (a.status) g.classList.add('flowing');
+      /* 刚建立/刚出现的连线播一次回执动画 */
+      if (drawnEdges.size && !drawnEdges.has(e.id)) g.classList.add('pop');
+      drawnEdges.add(e.id);
 
       /* 加粗透明命中线：只负责「让细线好悬停」，不直接删（避免误删） */
       const hit = document.createElementNS(SVGNS, 'path');
@@ -368,9 +415,11 @@ export function renderEditor(root, params) {
           el.classList.add('dragging'); wrap.classList.add('dragging');
           pushUndo();
         }
-        node.x = ox + dx / vp.zoom;
-        node.y = oy + dy / vp.zoom;
+        /* 边拖边算对齐：命中就吸附并画参考线 */
+        const sn = snapDrag(el, node, ox + dx / vp.zoom, oy + dy / vp.zoom);
+        node.x = sn.x; node.y = sn.y;
         el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+        paintGuides(sn);
         drawEdges(); scheduleMinimap();
       };
       const up = () => {
@@ -378,6 +427,7 @@ export function renderEditor(root, params) {
         el.removeEventListener('pointerup', up);
         el.removeEventListener('pointercancel', up);
         el.classList.remove('dragging'); wrap.classList.remove('dragging');
+        guides.innerHTML = '';
         if (moved && pushed) save();
       };
       try { el.setPointerCapture(e.pointerId); } catch (_) { /* 某些环境不支持，忽略 */ }
@@ -547,6 +597,8 @@ export function renderEditor(root, params) {
     if (!expanded) {
       body.classList.add('collapsed');
       renderCollapsed(node, body);
+      /* 折叠态也必须显示「正在跑」：用户在旁边看别的节点时，也得知道这一步还没完 */
+      paintProgress(node);
       if (statusEl) body.append(statusEl);
       if (errEl) body.append(errEl);
       return;
@@ -830,7 +882,11 @@ export function renderEditor(root, params) {
      以前每次进度回调都整体重画节点，会把正在输入的文本框冲掉 —— 这就是手感卡顿的主因。 */
   function paintProgress(node) {
     const el = nodeEls.get(node.id); if (!el) return;
-    el.classList.toggle('running', !!(node.status || node.error));
+    const wasRunning = el.classList.contains('running');
+    const running = !!(node.status || node.error);
+    el.classList.toggle('running', running);
+    /* 开跑/收工都会改变「边要不要流动」，这时才重画连线（避免每次进度回调都重画） */
+    if (wasRunning !== running) drawEdges();
     const body = el.querySelector('.node-body'); if (!body) return;
     let box = body.querySelector('.node-run');
     if (!node.status && !node.error) { box?.remove(); return; }
@@ -845,6 +901,15 @@ export function renderEditor(root, params) {
     const p = Number(node.progress || 0);
     box.querySelector('.run-bar').classList.toggle('indet', p <= 0);
     box.querySelector('.run-bar i').style.width = Math.max(8, Math.min(100, p)) + '%';
+  }
+
+  /* 一次性反馈：闪一下就撤，不在界面上留痕（完成 = 绿光扩散，失败 = 抖一下） */
+  function flash(node, cls, ms = 1000) {
+    const el = nodeEls.get(node.id); if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;                 /* 强制重排，让同一动画能连着播 */
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), ms);
   }
 
   async function run(node, refresh, extra = '', opts = {}) {
@@ -898,6 +963,7 @@ export function renderEditor(root, params) {
     }
     paintProgress(node);
     refresh(node); save();
+    flash(node, node.error ? 'just-err' : 'just-done', node.error ? 520 : 950);
   }
 
   /* ---- 重绘 ---- */
@@ -1069,22 +1135,85 @@ export function renderEditor(root, params) {
       /* 分享 = 真的导出项目 JSON（备份 / 发给别人导入），不再只是弹一句提示 */
       h('button', { class: 'btn-primary', title: '导出为 JSON 文件，可备份或发给别人', onclick: exportJSON }, '分享')));
 
+  /* 总览：真的缩放到「全部内容刚好装下」，而不是只挪一下原点 */
   function fit() {
     if (!proj.nodes.length) return;
-    const xs = proj.nodes.map(n => n.x), ys = proj.nodes.map(n => n.y);
-    vp.x = 60 - Math.min(...xs); vp.y = 90 - Math.min(...ys); vp.zoom = 1; applyVp(); save();
-  }
-  function arrange() {
-    const cols = new Set(proj.nodes.map(n => Math.round(n.x / 380)));
-    const order = [...cols].sort((a, b) => a - b);
-    const colIndex = new Map(order.map((c, i) => [c, i]));
-    const rowCounter = {};
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const n of proj.nodes) {
-      const c = colIndex.get(Math.round(n.x / 380));
-      rowCounter[c] = rowCounter[c] || 0;
-      n.x = 100 + c * 380; n.y = 100 + rowCounter[c] * 240; rowCounter[c]++;
+      const el = nodeEls.get(n.id);
+      const w = el?.offsetWidth || 300, hh = el?.offsetHeight || 180;
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + w); maxY = Math.max(maxY, n.y + hh);
     }
-    refresh(); save(); toast('已整理', 'ok');
+    const pad = 90, vw = wrap.clientWidth, vh = wrap.clientHeight;
+    const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
+    const z = Math.min(1, Math.min((vw - pad * 2) / bw, (vh - pad * 2) / bh));
+    stage.classList.add('vp-anim');
+    vp.zoom = Math.max(.25, z);
+    vp.x = (vw - bw * vp.zoom) / 2 - minX * vp.zoom;
+    vp.y = (vh - bh * vp.zoom) / 2 - minY * vp.zoom;
+    applyVp(); save();
+    setTimeout(() => stage.classList.remove('vp-anim'), 340);
+    toast(`总览 ${proj.nodes.length} 个节点 · ${Math.round(vp.zoom * 100)}%`, 'ok', 1800);
+  }
+
+  /* 一键整理：按依赖关系分列（上游在左、下游在右），列内按当前上下位置排，带缓动 */
+  function arrange() {
+    if (!proj.nodes.length) return;
+    pushUndo();
+    const indeg = new Map(), out = new Map();
+    for (const n of proj.nodes) { indeg.set(n.id, 0); out.set(n.id, []); }
+    for (const e of proj.edges) {
+      if (!indeg.has(e.to) || !out.has(e.from)) continue;
+      indeg.set(e.to, indeg.get(e.to) + 1);
+      out.get(e.from).push(e.to);
+    }
+    const layer = new Map();
+    let frontier = proj.nodes.filter(n => indeg.get(n.id) === 0).map(n => n.id);
+    let L = 0;
+    while (frontier.length && L < 60) {
+      const next = [];
+      for (const id of frontier) {
+        if (layer.has(id)) continue;
+        layer.set(id, L);
+        for (const t of out.get(id) || []) {
+          indeg.set(t, indeg.get(t) - 1);
+          if (indeg.get(t) === 0) next.push(t);
+        }
+      }
+      frontier = next; L++;
+    }
+    /* 成环 / 孤立节点统一收进最后一列，保证每个节点都有位置 */
+    for (const n of proj.nodes) if (!layer.has(n.id)) layer.set(n.id, L);
+
+    const cols = new Map();
+    for (const n of proj.nodes) {
+      const c = layer.get(n.id);
+      if (!cols.has(c)) cols.set(c, []);
+      cols.get(c).push(n);
+    }
+
+    stage.classList.add('layout-anim');
+    for (const [c, list] of [...cols.entries()].sort((a, b) => a[0] - b[0])) {
+      list.sort((a, b) => a.y - b.y);
+      let y = 120;
+      for (const n of list) {
+        n.x = 120 + c * 400;
+        n.y = y;
+        const el = nodeEls.get(n.id);
+        if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+        y += (nodeEls.get(n.id)?.offsetHeight || 200) + 56;
+      }
+    }
+    /* 节点在滑动，连线得跟着重画，否则线会「先到」 */
+    const t0 = performance.now();
+    const follow = () => {
+      drawEdges(); scheduleMinimap();
+      if (performance.now() - t0 < 400) requestAnimationFrame(follow);
+    };
+    follow(); save();
+    setTimeout(() => stage.classList.remove('layout-anim'), 380);
+    toast(`已按依赖排成 ${cols.size} 列`, 'ok', 1800);
   }
   function exportJSON() {
     const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });

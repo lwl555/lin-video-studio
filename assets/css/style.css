@@ -609,6 +609,68 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .d3-shot img{width:100%;border-radius:6px;display:block;background:var(--bg)}
 .d3-shot-label{font-size:11px;color:var(--txt-3);margin-top:4px}
 
+/* ============================================================
+   画布「活着」的动效层
+   参考同类产品的执行态语言：n8n 的节点状态色、Krea 的 shared run 流转、
+   Lovart 的过程透明标签。原则：只在「状态真的变了」的瞬间动，静止时保持安静。
+   ============================================================ */
+
+/* 1) 运行中：边框呼吸（告诉用户"这个节点在干活"） */
+.node.running{border-color:var(--warn)}
+.node.running:not(.dragging){animation:nodePulse 1.5s ease-in-out infinite}
+@keyframes nodePulse{
+  0%,100%{box-shadow:var(--shadow-s)}
+  50%{box-shadow:0 0 0 3px rgba(245,194,107,.26),0 8px 22px rgba(245,194,107,.16)}
+}
+
+/* 2) 进度条：一条从左到右扫过的微光，表示"正在推进"而不是卡住 */
+.node-run .run-bar i{position:relative;overflow:hidden}
+.node-run .run-bar i::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+  transform:translateX(-100%);animation:barShine 1.3s linear infinite}
+.node-run.err .run-bar i::after{display:none}
+@keyframes barShine{to{transform:translateX(100%)}}
+
+/* 3) 数据在流：上游节点运行中时，它的出边变成流动虚线（marching ants） */
+.edge-g.flowing .edge{stroke:var(--brand);stroke-width:2;stroke-dasharray:6 5;
+  animation:edgeFlow .5s linear infinite}
+.edge-g.flowing .edge-hit{pointer-events:stroke}
+@keyframes edgeFlow{to{stroke-dashoffset:-11}}
+
+/* 4) 新连线：从粗到细弹一下，给"接上了"一个即时回执 */
+.edge-g.pop .edge{animation:edgePop .42s cubic-bezier(.2,.8,.3,1)}
+@keyframes edgePop{0%{stroke-width:3.6;opacity:.15}100%{stroke-width:1.6;opacity:1}}
+
+/* 5) 完成 / 失败：一闪即走，不长期占视觉 */
+.node.just-done:not(.dragging){animation:nodeDone .9s ease-out}
+@keyframes nodeDone{
+  0%{box-shadow:0 0 0 0 rgba(34,160,90,.45)}
+  60%{box-shadow:0 0 0 7px rgba(34,160,90,0)}
+  100%{box-shadow:var(--shadow-s)}
+}
+.node.just-err:not(.dragging){animation:nodeShake .38s ease}
+@keyframes nodeShake{
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-4px)}
+  60%{transform:translateX(4px)}
+}
+
+/* 6) 拖线时的候选吸附点：输入端口呼吸放大，明确"松手就接这里" */
+.node.link-target .port-in{animation:portPulse 1s ease-in-out infinite}
+@keyframes portPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
+
+/* 7) 拖动对齐参考线（只在对齐瞬间出现，位移一散就消失） */
+.guides{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:15}
+.guide{position:absolute;background:var(--brand);opacity:.9}
+.guide.v{width:1px}
+.guide.h{height:1px}
+.guide::after{content:'';position:absolute;background:inherit}
+
+/* 8) 视图过渡：总览 / 自动整理时让画面滑过去，而不是瞬间跳 */
+.canvas-viewport.vp-anim{transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.canvas-viewport.layout-anim .node:not(.dragging){
+  transition:left .34s cubic-bezier(.4,0,.2,1),top .34s cubic-bezier(.4,0,.2,1),box-shadow .15s}
+
 @media (max-width:1100px){
   .auth{grid-template-columns:1fr}
   .auth-visual{display:none}
