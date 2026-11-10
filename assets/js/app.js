@@ -3,11 +3,12 @@ import { store, auth, ADMIN } from './store.js';
 import { $, $$, toast, h } from './ui.js';
 import { icon } from './icons.js';
 import { usageReport } from './storage.js';
-import * as Home from './views/home.js?v=20261110b';
+import * as Home from './views/home.js?v=20261110c';
 import * as Canvas from './views/canvas.js';
 import * as ImageWs from './views/image.js';
 import * as VideoWs from './views/video.js';
 import * as Studio from './views/studio.js';
+import * as AgentChat from './views/agentchat.js';
 import * as Series from './views/series.js';
 import * as Assets from './views/assets.js';
 import * as Works from './views/works.js';
@@ -74,10 +75,11 @@ const ROUTES = {
   canvas: Canvas.renderList, 'canvas-edit': Canvas.renderEditor,
   image: ImageWs.render, video: VideoWs.render,
   studio: Studio.render, series: Series.render,
+  agent: AgentChat.render,
   assets: Assets.render, works: Works.render, settings: Settings.render
 };
 const NAV_OF = { home: 'inspire', inspire: 'inspire', series: 'series', canvas: 'canvas', 'canvas-edit': 'canvas',
-  works: 'works', assets: 'assets', settings: 'settings', image: 'image', video: 'video', studio: 'series' };
+  works: 'works', assets: 'assets', settings: 'settings', image: 'image', video: 'video', studio: 'series', agent: 'series' };
 let current = 'home';
 
 export function go(route, params = {}) {

@@ -112,7 +112,11 @@ export function render(root, params = {}) {
   /* 创作入口四宫格 */
   const entryGrid = h('div', { class: 'entry-grid' },
     ...ENTRIES.map(e => h('button', { class: 'entry-tile', onclick: () => {
-      if (e.k === 'agent' || e.k === 'studio') {
+      if (e.k === 'agent') {
+        const p = ta.value.trim();
+        return go('agent', p ? { prompt: p } : {});
+      }
+      if (e.k === 'studio') {
         const p = ta.value.trim();
         return go('studio', p ? { prompt: p } : {});
       }
