@@ -173,12 +173,17 @@ async function request(path, { base, own = false, method = 'POST', headers = {},
     const txt = await r.text();
     if (!r.ok) {
       let hint = '';
-      if (r.status === 401 || r.status === 403) hint = own
+      const low = String(txt || '');
+      const noQuota = /insufficient_user_quota|预扣费失败/.test(low);
+      const queueFull = /video_queue_full|队列已满/.test(low);
+      if (noQuota) hint = '（平台 AI 账户余额不足，需要先充值；这条模型是按量扣费的）';
+      else if (queueFull) hint = '（视频队列已满：免费通道全天排队，换付费模型或稍后再试）';
+      else if (r.status === 401 || r.status === 403) hint = own
         ? '（你的 Key 无效、或该模型你没权限 → 去「模型接入 → 我的模型」检查）'
         : '（后端密钥无效或模型无权限，请联系平台）';
       else if (r.status === 404) hint = '（模型名或路径不对）';
       else if (r.status === 429) hint = '（触发限流，等 1 分钟再试）';
-      throw new Error(`HTTP ${r.status}${hint} ${txt.slice(0, 240)}`);
+      throw new Error(`HTTP ${r.status}${hint} ${low.slice(0, 240)}`);
     }
     let j; try { j = JSON.parse(txt); } catch { j = { raw: txt }; }
     return { status: r.status, body: j };
