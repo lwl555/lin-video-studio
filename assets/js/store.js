@@ -101,29 +101,70 @@ export async function sha256(str) {
 }
 
 /* ---- 认证 ---- */
+const INVITE_DAY = 86400000;
+
+/* 邀请码直接读本地运营数据，避免 store ↔ ops 互相 import 成环 */
+function findInvite(code) {
+  const list = (S.ops && S.ops.invites) || [];
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return null;
+  return list.find(x => String(x.code || '').toUpperCase() === c) || null;
+}
+
 export const auth = {
   async login(account, pass) {
     const hash = await sha256(pass);
     if (account === ADMIN.account) {
-      if (hash !== ADMIN.passHash) return { ok: false, msg: '密码错误' };
+      if (hash !== ADMIN.passHash) return { ok: false, code: 'BAD_PASS', msg: '密码不太对，再核对一下' };
       const s = { account: ADMIN.account, nick: ADMIN.nick, role: 'admin' };
       store.set({ session: s });
       return { ok: true, user: s };
     }
     const u = S.users.find(x => x.account === account);
-    if (!u) return { ok: false, msg: '该账号未授权，请联系管理员' };
-    if (u.passHash !== hash) return { ok: false, msg: '密码错误' };
-    if (!u.approved) return { ok: false, msg: '账号待管理员授权' };
-    const s = { account: u.account, nick: u.nick, role: 'user' };
+    if (!u) return { ok: false, code: 'NO_USER', msg: '这个手机号还没有开通账号' };
+    if (u.passHash !== hash) return { ok: false, code: 'BAD_PASS', msg: '密码不太对，再核对一下' };
+    if (!u.approved) return { ok: false, code: 'PENDING', msg: '账号还在等管理员授权' };
+    const s = { account: u.account, nick: u.nick, role: u.role === 'admin' ? 'admin' : 'user' };
     store.set({ session: s });
     return { ok: true, user: s };
   },
-  async register(account, nick, pass) {
-    if (S.users.some(x => x.account === account)) return { ok: false, msg: '账号已存在' };
-    const u = { account, nick, passHash: await sha256(pass), approved: false, createdAt: Date.now() };
+
+  /* inviteCode 可选：带了有效邀请码 → 直接开通，并发放奖励额度 */
+  async register(account, nick, pass, inviteCode = '') {
+    if (S.users.some(x => x.account === account)) {
+      return { ok: false, code: 'EXISTS', msg: '这个手机号已经申请过了，直接登录或找管理员' };
+    }
+    const u = {
+      account,
+      nick,
+      passHash: await sha256(pass),
+      approved: false,
+      createdAt: Date.now(),
+      invitedBy: '',
+      inviteCode: ''
+    };
+
+    const code = String(inviteCode || '').trim();
+    if (code) {
+      const it = findInvite(code);
+      if (!it) return { ok: false, code: 'BAD_INVITE', msg: '邀请码不对，检查一下大小写和字母' };
+      if (it.usedBy) return { ok: false, code: 'USED_INVITE', msg: `这个邀请码已经被用掉了（${it.usedBy}）` };
+      it.usedBy = account;
+      it.usedAt = Date.now();
+      u.approved = true;
+      u.invitedBy = ADMIN.account;
+      u.inviteCode = it.code;
+      if (Number(it.extra) > 0) {
+        u.bonus = { extra: Math.round(Number(it.extra)), until: Date.now() + Math.max(1, Number(it.days) || 30) * INVITE_DAY };
+      }
+    }
+
     S.users.push(u); persist();
-    return { ok: true, msg: '注册成功，需管理员授权后方可登录' };
+    return u.approved
+      ? { ok: true, invited: true, bonus: u.bonus || null, msg: '邀请码已生效，账号直接开通了' }
+      : { ok: true, invited: false, msg: '申请已提交，管理员授权后即可登录' };
   },
+
   logout() { store.set({ session: null }); },
   get user() { return S.session; },
   get isAdmin() { return S.session?.role === 'admin'; }

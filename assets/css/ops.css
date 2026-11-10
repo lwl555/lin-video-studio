@@ -1,0 +1,156 @@
+/* ================================================================
+   客服 / 公告 / 每日额度 / 管理后台
+   与 style.css 分离维护，移动端覆盖仍放在 mobile.css
+   ================================================================ */
+
+/* ---------- 登录页：客服入口 ---------- */
+.f-support{margin-top:18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--txt-3)}
+.link-btn{background:none;border:none;padding:0;font:inherit;color:var(--brand-2);font-weight:600;
+  cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+.link-btn:hover{color:var(--brand)}
+
+/* ---------- 客服二维码弹窗 ---------- */
+.support-box{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px}
+.support-reason{width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--txt-2);line-height:1.7}
+.support-qr{width:216px;max-width:72%;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fff}
+.support-qr img{width:100%;display:block;border-radius:8px}
+.support-title{font-size:13.5px;font-weight:600}
+.support-sub{font-size:12px;color:var(--txt-2);line-height:1.7;max-width:320px}
+.support-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:2px}
+
+/* ---------- 注册结果弹窗 ---------- */
+.auth-welcome-h{font-size:15px;font-weight:700}
+.auth-steps{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:var(--txt-2);line-height:1.9}
+.auth-account-chip{margin-top:12px;display:inline-block;background:var(--brand-soft);color:var(--brand-2);
+  border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- 顶栏：通知红点 ---------- */
+#btn-notice{position:relative}
+.notice-dot{position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--err);
+  opacity:0;transform:scale(.6);transition:.15s;pointer-events:none}
+.notice-dot.on{opacity:1;transform:none;box-shadow:0 0 0 2px #fff}
+
+/* ---------- 顶栏：今日额度胶囊 ---------- */
+.quota-chip{display:flex;align-items:center;height:28px;padding:0 11px;border-radius:14px;
+  border:1px solid var(--line-2);background:#fff;font-size:12px;color:var(--txt-2);cursor:pointer;
+  font-variant-numeric:tabular-nums;transition:.15s;white-space:nowrap}
+.quota-chip:hover{border-color:var(--brand);color:var(--brand-2)}
+.quota-chip.warn{background:#FEF2F2;border-color:#FECACA;color:var(--err)}
+
+/* ---------- 额度弹窗 ---------- */
+.quota-row{margin-bottom:12px}
+.quota-row:last-child{margin-bottom:0}
+.quota-row-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+.quota-k{color:var(--txt-2)}
+.quota-v{font-weight:600;font-variant-numeric:tabular-nums}
+.quota-v.full{color:var(--err)}
+.quota-bar{height:6px;border-radius:4px;background:var(--bg);overflow:hidden}
+.quota-bar i{display:block;height:100%;border-radius:4px;transition:width .3s}
+
+/* ---------- 首页公告横幅 ---------- */
+.notice-banner{display:flex;align-items:flex-start;gap:10px;background:#fff;border:1px solid var(--line);
+  border-left:3px solid var(--brand);border-radius:10px;padding:10px 12px;margin-bottom:18px}
+.notice-banner.warn{border-left-color:var(--warn);background:#FFFBF2}
+.notice-banner.ok{border-left-color:var(--ok);background:#F5FDF9}
+.notice-tag{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.02em;color:var(--brand-2);
+  background:var(--brand-soft);border-radius:5px;padding:2px 6px;line-height:1.6;white-space:nowrap}
+.notice-banner.warn .notice-tag{color:#8a6d1f;background:#FDF2D8}
+.notice-banner.ok .notice-tag{color:#0E7C6E;background:#E7F8F2}
+.notice-body{flex:1;min-width:0}
+.notice-title{font-size:13px;font-weight:600;line-height:1.5}
+.notice-text{font-size:12.5px;color:var(--txt-2);line-height:1.65;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+.notice-close{flex:none;background:none;border:none;font-size:17px;line-height:1;color:var(--txt-3);
+  cursor:pointer;padding:0 2px}
+.notice-close:hover{color:var(--txt)}
+
+/* ---------- 公告弹窗 ---------- */
+.notice-list{display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto}
+.notice-item{border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:#fff}
+.notice-item.warn{background:#FFFBF2;border-color:#F3E3BF}
+.notice-item.ok{background:#F5FDF9;border-color:#CDEFE4}
+.notice-item-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.notice-item-head .notice-title{flex:1;min-width:0}
+.notice-time{font-size:11px;color:var(--txt-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.notice-empty{text-align:center;padding:18px 8px}
+
+/* ---------- 管理后台 ---------- */
+.admin-page{max-width:1040px}
+.adm-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.adm-head-acts{display:flex;gap:8px}
+.adm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.adm-tab{border:1px solid transparent;background:transparent;color:var(--txt-2);font-size:13px;
+  padding:7px 13px;border-radius:9px;cursor:pointer;transition:.15s}
+.adm-tab:hover{background:var(--bg);color:var(--txt)}
+.adm-tab.active{background:var(--brand-soft);color:var(--brand-2);font-weight:600}
+.adm-body{display:flex;flex-direction:column;gap:14px}
+.adm-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.adm-stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+.adm-stat-label{font-size:12px;color:var(--txt-3)}
+.adm-stat-value{font-size:24px;font-weight:700;letter-spacing:-.4px;font-variant-numeric:tabular-nums;margin-top:2px}
+.adm-stat-sub{font-size:11.5px;color:var(--txt-3);margin-top:3px;line-height:1.5}
+.adm-stat.brand .adm-stat-value{color:var(--brand-2)}
+.adm-stat.warn .adm-stat-value{color:var(--warn)}
+.adm-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.adm-card-title{font-size:14px;font-weight:600;margin-bottom:10px}
+.adm-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.adm-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.adm-chart{display:flex;align-items:flex-end;gap:8px;height:120px;padding:6px 2px 0}
+.adm-chart.tall{height:150px}
+.adm-bar-wrap{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;
+  align-items:center;gap:6px;min-width:0}
+.adm-bar{width:100%;max-width:34px;background:linear-gradient(180deg,var(--brand),#7ADDD2);
+  border-radius:5px 5px 2px 2px;transition:height .3s}
+.adm-bar-label{font-size:10.5px;color:var(--txt-3);white-space:nowrap}
+.adm-chart-empty{height:120px;display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:12.5px;color:var(--txt-3);line-height:1.7;padding:0 24px;
+  border:1px dashed var(--line);border-radius:10px;background:#FCFCFB}
+.adm-chart-empty.tall{height:150px}
+.adm-legend{display:flex;gap:12px;font-size:11.5px;color:var(--txt-3);margin-top:10px;flex-wrap:wrap}
+.adm-global{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.adm-global-label{flex:1 1 260px;min-width:0}
+.adm-num-wrap{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--txt-3);flex:none}
+.adm-num{width:82px;padding:6px 8px;text-align:center;font-variant-numeric:tabular-nums}
+.adm-users{display:flex;flex-direction:column;gap:10px}
+.adm-user{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.adm-user-main{display:flex;align-items:center;gap:10px;flex:1 1 220px;min-width:0}
+.adm-user-info{min-width:0}
+.adm-user-name{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.adm-user-meta{font-size:11.5px;color:var(--txt-3);display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.adm-user-quota{display:flex;gap:10px;flex-wrap:wrap}
+.adm-user-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.adm-table{overflow-x:auto}
+.adm-tr{display:grid;grid-template-columns:minmax(120px,1.4fr) repeat(3,minmax(62px,.7fr)) repeat(3,minmax(56px,.6fr));
+  gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;min-width:560px}
+.adm-tr-head{color:var(--txt-3);font-size:11.5px;border-bottom:1px solid var(--line-2)}
+.adm-tr-total{font-weight:700;border-bottom:none;padding-top:11px}
+.adm-td{font-variant-numeric:tabular-nums;color:var(--txt-2)}
+.adm-td.strong{color:var(--txt);font-weight:700}
+.adm-td.full{color:var(--err)}
+.adm-td-acc{display:flex;flex-direction:column;line-height:1.35;min-width:0}
+.adm-td-acc b{font-size:12.5px}
+.adm-td-acc i{font-style:normal;font-size:10.5px;color:var(--txt-3)}
+.adm-notices,.adm-invites{display:flex;flex-direction:column;gap:10px}
+.adm-notice{border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.adm-notice-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.adm-notice-head b{font-size:13px}
+.adm-notice-time{font-size:11px;color:var(--txt-3);margin-left:auto;white-space:nowrap}
+.adm-notice-body{font-size:12.5px;color:var(--txt-2);line-height:1.7;margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.adm-invite{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--line);
+  border-radius:10px;padding:11px 12px}
+.adm-invite.used{opacity:.62}
+.adm-invite-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:700;
+  letter-spacing:.06em;background:var(--brand-soft);color:var(--brand-2);border-radius:7px;padding:6px 10px}
+.adm-invite-info{flex:1 1 220px;min-width:0}
+.adm-invite-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.adm-invite-time{font-size:11px;color:var(--txt-3);margin-top:3px}
+.adm-model{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.adm-model:first-of-type{border-top:none;margin-top:0;padding-top:0}
+.adm-model-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.adm-model-kind{width:28px;height:28px;border-radius:8px;background:var(--brand-soft);color:var(--brand-2);
+  display:flex;align-items:center;justify-content:center}
+.adm-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.adm-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.adm-check{display:flex;align-items:center;gap:8px;font-size:13px;padding-top:8px}
+.adm-empty{font-size:12.5px;color:var(--txt-3);padding:14px 0;text-align:center}

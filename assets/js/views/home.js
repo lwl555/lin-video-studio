@@ -4,6 +4,7 @@ import { icon } from '../icons.js';
 import { store, saveMedia, uid } from '../store.js';
 import { providers, chat } from '../models.js';
 import { go } from '../app.js';
+import { noticeBanner } from '../notice-ui.js';
 
 const MODES = [
   { k: 'image', label: '图片生成', icon: 'image', ph: '上传参考素材，输入文字，请描述你想生成的图片' },
@@ -138,7 +139,10 @@ export function render(root, params = {}) {
     ? h('div', { class: 'flow-grid' }, ...works.slice(0, 8).map(w => workCard(w)))
     : h('div', { class: 'flow-grid' }, ...PRESETS.map(s => presetCard(s)));
 
+  const banner = noticeBanner();
+
   root.append(h('div', { class: 'home' },
+    ...(banner ? [banner] : []),      /* 原生 append(null) 会渲染出 "null"，必须先过滤 */
     h('div', { class: 'home-hero' },
       h('h1', { class: 'home-title' }, '释放你的创造力，', h('br', {}), '即刻将创意变为现实！'),
       h('div', { class: 'home-desc' }, '输入想法或剧本，上传参考，和林的视频工作台一起创作')

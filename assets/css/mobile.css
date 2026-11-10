@@ -39,7 +39,8 @@
   .search-box input{min-width:0}
   .credit-pill{padding:4px 9px;font-size:11.5px;gap:5px}
   .credit-pill .credit-sep,.credit-pill>span:nth-child(2){display:none}
-  #btn-notice{display:none}
+  /* 顶栏放不下太多东西：收起「已接入 BYOK」胶囊，保留通知与今日额度 */
+  .credit-pill{display:none}
 
   /* ---------- 页面骨架 ---------- */
   .page{padding:15px 13px calc(26px + env(safe-area-inset-bottom))}
@@ -185,6 +186,34 @@
   .d3-side:first-child{border-right:none}
   .d3-side:last-child{border-left:none}
   .d3-stage{min-height:46vh}
+
+  /* ---------- 管理后台 / 公告 / 额度 ---------- */
+  .adm-head{margin-bottom:12px}
+  .adm-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -13px 14px;padding:0 13px 10px}
+  .adm-tabs::-webkit-scrollbar{display:none}
+  .adm-tab{flex:none;white-space:nowrap}
+  .adm-stats{grid-template-columns:repeat(2,1fr);gap:9px}
+  .adm-stat{padding:12px}
+  .adm-stat-value{font-size:20px}
+  .adm-card{padding:13px}
+  .adm-row2,.adm-row3{grid-template-columns:1fr;gap:8px}
+  .adm-user{flex-direction:column;align-items:stretch;gap:9px}
+  .adm-user-main{flex:none}
+  .adm-user-quota{justify-content:space-between}
+  .adm-user-acts{margin-left:0}
+  .adm-user-acts>.node-btn{flex:1;justify-content:center}
+  .adm-invite{gap:9px}
+  .adm-invite-code{font-size:13px}
+  .adm-invite .adm-user-acts{width:100%;margin-left:0}
+  .adm-invite .adm-user-acts>.node-btn{flex:1;justify-content:center}
+  .adm-notice-time{margin-left:0;flex-basis:100%}
+  .adm-global{gap:10px}
+  .adm-num-wrap{flex:1 1 30%}
+  .adm-num{width:100%}
+  .quota-chip{height:24px;padding:0 8px;font-size:11px}
+  .notice-banner{margin-bottom:14px;padding:9px 11px}
+  .f-support{margin-top:14px}
+  .support-qr{width:186px}
 }
 
 @media (max-width:560px){

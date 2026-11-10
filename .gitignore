@@ -13,3 +13,5 @@ _gen_*.py
 _p*.log
 _s_*.png
 .pavo-probe*/
+_probe*.mjs
+_fix_*.py

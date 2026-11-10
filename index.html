@@ -9,8 +9,9 @@
 <!-- 品牌图标：青色圆角方块 + 白色播放键（胶片感），纯 SVG 内联，不依赖外链 -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2317B8A6'/%3E%3Crect x='14' y='13' width='36' height='38' rx='7' fill='none' stroke='%23fff' stroke-width='3.2'/%3E%3Cpath d='M28.5 25.5 39 32 28.5 38.5z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2317B8A6'/%3E%3Crect x='14' y='13' width='36' height='38' rx='7' fill='none' stroke='%23fff' stroke-width='3.2'/%3E%3Cpath d='M28.5 25.5 39 32 28.5 38.5z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="assets/css/style.css?v=20261110i">
-<link rel="stylesheet" href="assets/css/mobile.css?v=20261110i">
+<link rel="stylesheet" href="assets/css/style.css?v=20261110k">
+<link rel="stylesheet" href="assets/css/ops.css?v=20261110k">
+<link rel="stylesheet" href="assets/css/mobile.css?v=20261110k">
 <script type="importmap">
 {
   "imports": {
@@ -82,12 +83,16 @@
 
       <div class="f-alt">还没有账号 <a id="auth-go-register">申请授权</a></div>
       <p class="f-note">仅限授权创作者进入 · 未授权账号会被拒绝</p>
+      <div class="f-support">
+        <span>开通、忘记密码、额度不够？</span>
+        <button class="link-btn" id="auth-support" type="button">联系客服</button>
+      </div>
     </div>
 
     <div class="form-inner hidden" id="form-register">
       <p class="form-eyebrow">REQUEST ACCESS</p>
       <h2 class="form-h2">申请账号</h2>
-      <p class="form-sub">提交后需管理员授权方可登录</p>
+      <p class="form-sub">有邀请码当场开通；没有也没关系，提交后等管理员审核</p>
       <div class="f-field">
         <input id="reg-account" type="text" placeholder=" " autocomplete="username">
         <label>手机号</label><span class="f-line"></span>
@@ -100,11 +105,19 @@
         <input id="reg-pass" type="password" placeholder=" " autocomplete="new-password">
         <label>密码</label><span class="f-line"></span>
       </div>
+      <div class="f-field">
+        <input id="reg-invite" type="text" placeholder=" " autocomplete="off" spellcheck="false">
+        <label for="reg-invite">邀请码（选填，填了直接开通）</label><span class="f-line"></span>
+      </div>
       <div class="auth-error" id="reg-error"></div>
       <button class="signin" id="reg-submit"><span>提交申请</span>
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
       </button>
       <div class="f-alt">已有账号 <a id="auth-go-login">返回登录</a></div>
+      <div class="f-support">
+        <span>没有邀请码，想快点开通？</span>
+        <button class="link-btn" id="reg-support" type="button">联系客服</button>
+      </div>
     </div>
   </div>
 </section>
@@ -154,6 +167,10 @@
     </nav>
     <div class="sidebar-spacer"></div>
     <div class="sidebar-bottom">
+      <a class="nav-item nav-admin hidden" data-route="admin">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M9.5 12.5l1.8 1.8 3.4-3.6"/></svg>
+        <span>管理后台</span>
+      </a>
       <a class="nav-item" data-route="settings">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 010-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 014 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
         <span>模型接入</span>
