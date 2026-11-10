@@ -6,7 +6,7 @@ import { downloadMedia } from '../watermark.js';
 import { icon } from '../icons.js';
 import { store, saveMedia } from '../store.js';
 import { providers } from '../models.js';
-import { wsGet, wsPatch, onJob, runVideo } from '../jobs.js';
+import { wsGet, wsPatch, onJob, runVideo, forceReset } from '../jobs.js';
 import { optimizePrompt } from '../prompts.js';
 import { go } from '../app.js';
 
@@ -102,7 +102,11 @@ export function render(root, params = {}) {
         h('span', { class: 'spinner', style: { margin: '0 auto 12px' } }),
         h('div', { class: 'stage-txt' }, '生成中…（切到别的页面也会继续）'),
         h('div', { class: 'ws-bar' }, h('i', { style: { width: '42%' } })),
-        h('span', { class: 'ws-time' }, '已等待 ' + elapsed(s.startedAt))));
+        h('span', { class: 'ws-time' }, '已等待 ' + elapsed(s.startedAt)),
+        h('button', {
+          class: 'node-btn sm', style: { marginTop: '12px' },
+          onclick: () => { forceReset('video'); paint(); toast('已复位，可以重新生成了', 'ok'); }
+        }, '卡住了？点这里复位')));
       statusLine.textContent = s.progress || '';
     } else if (s.error) {
       stage.append(h('div', { class: 'stage-ph' },

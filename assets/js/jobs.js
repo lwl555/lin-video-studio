@@ -44,6 +44,55 @@ export function wsPatch(kind, patch) {
 
 export function isBusy(kind) { return !!running[kind]; }
 
+/* ---------- 卡死自愈 ----------
+   busy / startedAt / progress 是写进 localStorage 的，但真正在跑的任务只在内存里。
+   手机切后台被系统挂起、关掉页面、断网重连之后，busy 会永远停在 true，
+   按钮一直禁用、点生成毫无反应（实测出现过「已等待 30816s」）。
+   这里在启动时和每次回到前台时对账：内存里没有任务、或等待时间已经远超正常上限，
+   就把状态复位，并告诉用户发生了什么。 */
+const STALE_MS = 20 * 60 * 1000;          // 视频最长约 11 分钟，20 分钟还在转一定是死了
+const KINDS = ['image', 'video'];
+
+export function reconcile() {
+  let changed = false;
+  for (const k of KINDS) {
+    const s = rootWS()[k];
+    if (!s || !s.busy) continue;
+    const wait = Date.now() - (Number(s.startedAt) || 0);
+    const dead = !running[k] || wait > STALE_MS;
+    if (!dead) continue;
+    Object.assign(s, {
+      busy: false,
+      queued: false,
+      progress: '',
+      error: '上次生成被中断了（刷新页面 / 切到后台太久 / 网络断开），已经自动复位。直接重新生成即可。'
+    });
+    changed = true;
+    emit(k);
+  }
+  if (changed) store.save();
+  return changed;
+}
+
+/* 用户手动点「卡住了？点这里复位」时调用：只复位界面状态，不假装取消已发出的请求 */
+export function forceReset(kind) {
+  const s = rootWS()[kind];
+  if (!s) return;
+  running[kind] = false;
+  Object.assign(s, { busy: false, queued: false, progress: '', error: '' });
+  store.save();
+  emit(kind);
+}
+
+/* 启动即对账一次；手机从后台回到前台再对账一次 */
+reconcile();
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) reconcile();
+  });
+  window.addEventListener('focus', () => reconcile());
+}
+
 function emit(kind) {
   try { window.dispatchEvent(new CustomEvent(EVT, { detail: { kind } })); } catch { /* ignore */ }
 }
