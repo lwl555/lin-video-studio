@@ -108,10 +108,19 @@ document.addEventListener('contextmenu', e => { if (!e.target.closest('.node')) 
 export function pickFile(accept = 'image/*') {
   return new Promise(res => {
     const inp = h('input', { type: 'file', accept, style: { display: 'none' } });
-    inp.addEventListener('change', () => res(inp.files?.[0] || null));
+    let done = false;
+    const finish = f => {
+      if (done) return;
+      done = true;
+      setTimeout(() => inp.remove(), 0);
+      res(f || null);
+    };
+    inp.addEventListener('change', () => finish(inp.files?.[0] || null));
     document.body.append(inp);
     inp.click();
-    setTimeout(() => inp.remove(), 1000);
+    /* 不在 1 秒后立刻移除 input：部分浏览器在选文件途中移除元素会让选择框失效、
+       甚至拿不到 change 事件 —— 用户挑图慢一点就白点一次。这里留足时间，取消则 60 秒后收尾。 */
+    setTimeout(() => { if (!done) finish(null); }, 60000);
   });
 }
 

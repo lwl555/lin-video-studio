@@ -86,7 +86,7 @@ export function render(root, params = {}) {
     if (mode === 'image' && !prompt) return toast('先写点画面描述', 'err');
     if (mode === 'video' && !prompt) return toast('先写点镜头描述', 'err');
     if (mode === 'studio') return go('studio', { prompt });
-    if (mode === 'agent') return go('studio', prompt ? { prompt } : {});
+    if (mode === 'agent') return go('agent', prompt ? { prompt } : {});
     go(mode, { prompt, refs: refs.map(r => r.url) });
   };
 

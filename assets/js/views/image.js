@@ -6,6 +6,7 @@ import { icon } from '../icons.js';
 import { store, saveMedia } from '../store.js';
 import { providers } from '../models.js';
 import { wsGet, wsPatch, onJob, runImage } from '../jobs.js';
+import { optimizePrompt } from '../prompts.js';
 import { go } from '../app.js';
 
 /* 风格：缩略图是平台真实生成过的样图（点开就是这张图的效果），kw 是真正喂给模型的英文提示词 */
@@ -81,7 +82,11 @@ export function render(root, params = {}) {
   const panel = h('div', { class: 'ws-panel' },
     h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型'),
       modelSelect('image', providerId, v => { providerId = v; saveForm(); })),
-    h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '画面描述'), ta),
+    h('div', { class: 'form-group' },
+      h('div', { class: 'form-label', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
+        h('span', {}, '画面描述'),
+        h('button', { class: 'node-btn sm', title: '把一句话扩写成详细的画面提示词', onclick: optimize }, 'AI 优化提示词')),
+      ta),
     h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '参考图（可选，用于图生图）'), refBox),
     h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '风格'), styleRow),
     h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '尺寸'), sizeRow),
@@ -137,6 +142,20 @@ export function render(root, params = {}) {
     if (rs.length) strip.append(h('button', { class: 'btn-ghost', onclick: () => download(rs[0], 'image.png') }, '下载'));
   }
 
+  async function optimize(e) {
+    const b = e.currentTarget;
+    const raw = ta.value.trim();
+    if (!raw) return toast('先写一句画面描述，AI 再帮你扩写', 'err');
+    b.disabled = true; b.textContent = '扩写中…';
+    try {
+      const p = await optimizePrompt(raw, { kind: 'image', ratio: size, style: style.kw });
+      ta.value = p;
+      saveForm();
+      toast('已扩写成详细提示词，可再手动微调', 'ok', 3200);
+    } catch (err) { toast('扩写失败：' + err.message, 'err'); }
+    b.disabled = false; b.textContent = 'AI 优化提示词';
+  }
+
   async function generate() {
     const p = providers.get(providerId) || providers.defaultOf('image');
     if (!p) { toast('还没接入图像模型，去「模型接入」添加', 'err'); return go('settings'); }
@@ -152,6 +171,9 @@ export function render(root, params = {}) {
   /* 回到本页时：恢复历史 + 进行中的进度；任务完成后实时刷新 */
   paint();
   ta.addEventListener('change', saveForm);
+  /* 边写边存（防抖）：不然只在失焦时保存，直接切页面会把刚写的描述丢掉 */
+  let saveT = 0;
+  ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(saveForm, 400); });
 
   let off = null;
   off = onJob(kind => {

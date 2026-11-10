@@ -926,13 +926,23 @@ export function renderEditor(root, params) {
       if (type === 'text') {
         if (!prompt) throw new Error('请先写点内容');
         step('模型思考中…', 22);
-        const out = await chat(prompt, { system: '你是短视频/短剧创作助手，输出中文，简洁可落地。' });
+        const sys = '你是短视频/短剧创作助手，输出中文，简洁可落地。';
+        /* 「图片反推提示词」这类指令必须把上游图一起送进去，否则模型看不到图，只能瞎编；
+           万一模型不支持读图（返回 400），退回纯文本再试一次。 */
+        const wantImg = refImgs.length > 0 && /反推|这张图|参考图|看图|图里|画面里/.test(prompt);
+        let out;
+        try {
+          out = await chat(prompt, { system: sys, feature: 'agentText', images: wantImg ? refImgs.slice(0, 2) : [] });
+        } catch (e) {
+          if (!wantImg) throw e;
+          out = await chat(prompt, { system: sys, feature: 'agentText' });
+        }
         step('整理结果…', 88);
         node.content = out; node.media = null;
       } else if (type === 'image') {
         const p = prompt || ups.find(u => u.content)?.content || 'a cinematic frame';
         step('提交画面…', 18);
-        const r = await genImage(p, { images: refImgs.slice(0, 1), size: node.size || '1024x1024' });
+        const r = await genImage(p, { images: refImgs.slice(0, 1), size: node.size || '1024x1024', feature: 'image' });
         step('收图…', 90);
         node.media = { url: r.url, type: 'image' };
         store.add('works', { id: uid('w'), title: (node.prompt || '图片').slice(0, 24), type: 'image', url: r.url, createdAt: Date.now() });
@@ -941,6 +951,7 @@ export function renderEditor(root, params) {
         let vi = 0;
         const r = await genVideo(p, {
           images: refImgs.slice(0, 2), motion: node.motion, firstFrame: node.firstFrame, lastFrame: node.lastFrame,
+          feature: 'video',
           onProgress: s => step(s, Math.min(92, 25 + vi++ * 4))
         });
         step('收片…', 95);
@@ -1224,6 +1235,8 @@ export function renderEditor(root, params) {
 
   if (renderEditor._kbd) document.removeEventListener('keydown', renderEditor._kbd);
   renderEditor._kbd = e => {
+    /* 已离开画布页：把监听摘掉，否则在别的页面按 Ctrl+Z 会去撤销上一个画布 */
+    if (!wrap.isConnected) { document.removeEventListener('keydown', renderEditor._kbd); return; }
     const tag = (document.activeElement?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea') return;
     const k = e.key.toLowerCase();

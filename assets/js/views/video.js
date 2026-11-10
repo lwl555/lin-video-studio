@@ -6,6 +6,7 @@ import { icon } from '../icons.js';
 import { store, saveMedia } from '../store.js';
 import { providers } from '../models.js';
 import { wsGet, wsPatch, onJob, runVideo } from '../jobs.js';
+import { optimizePrompt } from '../prompts.js';
 import { go } from '../app.js';
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'];
@@ -16,7 +17,11 @@ export function render(root, params = {}) {
   const saved = wsGet('video');
 
   let providerId = saved.provider || store.state.modelRoute?.video || list[0]?.id || '';
-  let frames = { first: params.refs?.[0] || null, last: null, ref: null };
+  let frames = {
+    first: params.refs?.[0] || saved.first || null,
+    last: saved.last || null,
+    ref: saved.ref || null,
+  };
   let ratio = saved.ratio || '16:9';
   let duration = saved.duration || 5;
 
@@ -30,10 +35,10 @@ export function render(root, params = {}) {
       frameRow.append(h('div', { class: 'ref-slot', onclick: async () => {
         const f = await pickFile('image/*'); if (!f) return;
         frames[k] = await saveMedia(f);
-        drawFrames();
+        saveForm(); drawFrames();
       } },
         frames[k] ? h('img', { src: frames[k] }) : h('span', { style: { fontSize: '16px' } }, '＋'),
-        frames[k] ? h('div', { class: 'del', onclick: e => { e.stopPropagation(); frames[k] = null; drawFrames(); } }, '×') : h('span', {}, label)));
+        frames[k] ? h('div', { class: 'del', onclick: e => { e.stopPropagation(); frames[k] = null; saveForm(); drawFrames(); } }, '×') : h('span', {}, label)));
     }
   };
   drawFrames();
@@ -64,7 +69,11 @@ export function render(root, params = {}) {
     h('div', { class: 'ws-panel' },
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型'),
         modelSelect('video', providerId, v => { providerId = v; saveForm(); })),
-      h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '镜头描述'), ta),
+      h('div', { class: 'form-group' },
+        h('div', { class: 'form-label', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
+          h('span', {}, '镜头描述'),
+          h('button', { class: 'node-btn sm', title: '把一句话扩写成可执行的镜头提示词', onclick: optimize }, 'AI 优化提示词')),
+        ta),
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '首帧 / 尾帧（可选）'), frameRow),
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '画面比例'), ratioRow),
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '时长'), durRow),
@@ -73,7 +82,10 @@ export function render(root, params = {}) {
     h('div', { class: 'ws-stage' }, stage, statusLine, strip)));
 
   function saveForm() {
-    wsPatch('video', { provider: providerId, prompt: ta.value, ratio, duration });
+    wsPatch('video', {
+      provider: providerId, prompt: ta.value, ratio, duration,
+      first: frames.first || null, last: frames.last || null, ref: frames.ref || null,
+    });
   }
 
   function paint() {
@@ -118,6 +130,20 @@ export function render(root, params = {}) {
     if (rs.length) strip.append(h('button', { class: 'btn-ghost', onclick: () => download(rs[0], 'video.mp4') }, '下载'));
   }
 
+  async function optimize(e) {
+    const b = e.currentTarget;
+    const raw = ta.value.trim();
+    if (!raw && !frames.first) return toast('先写一句镜头描述，AI 再帮你扩写', 'err');
+    b.disabled = true; b.textContent = '扩写中…';
+    try {
+      const p = await optimizePrompt(raw || '让这张首帧自然动起来', { kind: 'video', ratio, style: '' });
+      ta.value = p;
+      saveForm();
+      toast('已扩写成完整镜头指令，可再手动微调', 'ok', 3200);
+    } catch (err) { toast('扩写失败：' + err.message, 'err'); }
+    b.disabled = false; b.textContent = 'AI 优化提示词';
+  }
+
   async function generate() {
     const p = providers.get(providerId) || providers.defaultOf('video');
     if (!p) { toast('还没接入视频模型，去「模型接入」添加', 'err'); return go('settings'); }
@@ -132,6 +158,9 @@ export function render(root, params = {}) {
 
   paint();
   ta.addEventListener('change', saveForm);
+  /* 边写边存（防抖）：切页 / 刷新后回来还在 */
+  let saveT = 0;
+  ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(saveForm, 400); });
 
   let off = null;
   off = onJob(kind => {

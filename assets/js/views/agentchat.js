@@ -8,7 +8,7 @@ import { icon } from '../icons.js';
 import { store, uid } from '../store.js';
 import { go } from '../app.js';
 import { Agent, STEPS, DONE, newProject } from '../agent.js';
-import { skillLabel } from '../skills.js';
+import { skillLabel, deliverOf } from '../skills.js';
 
 const STATUS_TXT = {
   idle: '待开始', running: '执行中', waiting: '等你确认', paused: '已暂停', done: '已完成', error: '失败',
@@ -114,8 +114,10 @@ export function render(root, params = {}) {
     go('agent', { id: p.id, start: '1' });
   }
 
-  /* 改完分镜后只重出被作废的镜头：从 frames 步续跑，已有产物自动跳过 */
+  /* 改完分镜后只重出被作废的镜头：从 frames 步续跑，已有产物自动跳过。
+     只要分镜（deliver=storyboard）时不重跑任何生成，直接停在分镜处给用户看。 */
   function regenerateChanged() {
+    if (deliverOf(proj) === 'storyboard') { renderAll(); return; }
     const i = STEPS.findIndex(s => s.key === 'frames');
     agent.st.cursor = i;
     agent.st.status = 'idle';

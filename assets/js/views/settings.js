@@ -84,6 +84,12 @@ export function render(root) {
           const next = { ...(store.state.modelRoute || {}) };
           if (v === '__default') delete next[f.key]; else next[f.key] = v;
           store.set({ modelRoute: next });
+          /* 让图片 / 视频工作区丢掉上次手选的模型，下次进页面直接跟随这里的新设置 */
+          const ws = store.state.ws || {};
+          if ((f.key === 'image' || f.key === 'video') && ws[f.key]) {
+            delete ws[f.key].provider;
+            store.save();
+          }
           toast(v === '__default' ? `「${f.label}」已用平台默认` : `「${f.label}」已切换`, 'ok');
         });
         card.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderTop: '1px solid var(--line)' } },

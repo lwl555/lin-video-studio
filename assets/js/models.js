@@ -148,7 +148,8 @@ function authHeaders(key) {
 }
 
 /* ---------- 文本 ---------- */
-export async function chat(prompt, { provider, feature, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
+/* temperature 0.7：结构化输出（方案 / 分镜 / JSON）比 0.8 更稳，文案又不至于干瘪 */
+export async function chat(prompt, { provider, feature, system = '', json = false, temperature = 0.7, images = [], timeout } = {}) {
   const p = resolveConn(provider || featureProvider(feature), 'text');
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]

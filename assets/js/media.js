@@ -134,9 +134,11 @@ export async function concatVideos(urls, opts = {}) {
 
   const out = 'out.mp4';
   const args = [];
+  let fastMode = false;
 
   if (!transition && !audioName && !reencode) {
-    /* 2a. 快拼（无重编码，最快最稳） */
+    /* 2a. 快拼（无重编码，最快最稳）。但各片段参数不一致时 copy 会失败，下面有兜底重编码 */
+    fastMode = true;
     await f.writeFile('list.txt', new TextEncoder().encode(names.map(n => `file '${n}'`).join('\n')));
     args.push('-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', out);
   } else if (transition > 0 && names.length > 1) {
@@ -169,8 +171,16 @@ export async function concatVideos(urls, opts = {}) {
   }
 
   onProgress('开始编码…');
-  const code = await f.exec(args);
-  if (code !== 0) throw new Error(`ffmpeg 执行失败（code ${code}）`);
+  let code = await f.exec(args);
+  /* 快拼失败（各片段分辨率 / 帧率 / 编码参数不一致最常见）→ 自动改用重编码再拼一次，
+     不然用户只会看到一句「ffmpeg 执行失败（code 1）」，还得自己猜原因。 */
+  if (code !== 0 && fastMode) {
+    onProgress('片段参数不一致，改用重编码拼接…');
+    try { await f.deleteFile(out); } catch { }
+    code = await f.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out]);
+  }
+  if (code !== 0) throw new Error(`ffmpeg 执行失败（code ${code}）——多半是片段分辨率 / 时长不一致，试着关掉转场再合成`);
 
   const data = await f.readFile(out);
   const blob = new Blob([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)], { type: 'video/mp4' });

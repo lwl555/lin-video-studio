@@ -5,6 +5,7 @@ import { store, uid } from '../store.js';
 import { go } from '../app.js';
 import { Agent, STEPS, DONE, newProject } from '../agent.js';
 import { skillLabel } from '../skills.js';
+import { charPrompt, scenePrompt, imagePrompt, videoPrompt } from '../prompts.js';
 
 const MODE_TXT = {
   auto: '全自动：Agent 一路跑到底，只在失败时停。适合先出一版粗剪看方向。',
@@ -130,14 +131,16 @@ function renderProject(root, proj) {
     }
     progressEl = h('div', { class: 'agent-progress' + (a.progress ? ' on' : '') },
       a.progress ? `${a.progress.msg}${a.progress.pct ? ' · ' + a.progress.pct + '%' : ''}` : '');
-    bar.append(mSwitch,
-      h('div', { class: 'agent-state ' + a.status },
-        statusText(a)),
+    /* 注意：原生 append 会把 null 变成字符串 "null" 渲染到界面上，条件项要先过滤 */
+    bar.append(...[
+      mSwitch,
+      h('div', { class: 'agent-state ' + a.status }, statusText(a)),
       progressEl,
       h('div', { style: { flex: '1' } }),
-      a.status === 'running' || a.status === 'waiting' ? h('button', {
-        class: 'btn-ghost sm', onclick: () => { agent.pause(); draw(); },
-      }, '暂停') : null);
+      (a.status === 'running' || a.status === 'waiting')
+        ? h('button', { class: 'btn-ghost sm', onclick: () => { agent.pause(); draw(); } }, '暂停')
+        : null,
+    ].filter(Boolean));
 
     /* 内容 */
     content.innerHTML = '';
@@ -245,10 +248,8 @@ function renderProject(root, proj) {
               const b = e.currentTarget; b.disabled = true; b.textContent = '生成中…';
               try {
                 const { genImage } = await import('../models.js');
-                const prompt = isChar
-                  ? `角色设定图：${c.name}，${c.age || ''}，${c.look || ''}，${c.persona || ''}，三视图，白底，清晰正面全身`
-                  : `场景设定图：${c.name}，${c.env || ''}，${c.light || ''}，电影感，无人物`;
-                const r = await genImage(prompt, { size: '1024x1024' });
+                const prompt = isChar ? charPrompt(c) : scenePrompt(c);
+                const r = await genImage(prompt, { size: '1024x1024', feature: 'agentImage' });
                 c.image = r.url;
                 store.add('assets', { id: uid('a'), name: c.name, type: isChar ? 'character' : 'scene', desc: '', url: r.url, createdAt: Date.now() });
                 agent.save(); draw();
@@ -256,6 +257,23 @@ function renderProject(root, proj) {
             },
           }, c.image ? '重新生成' : '生成')));
     })));
+  }
+
+  /* 提示词预演：把最终发给模型的整段指令摊开给用户看，避免「描述很糊却不知道糊在哪」 */
+  function promptModal(s) {
+    const row = (label, text) => h('div', { style: { marginTop: '12px' } },
+      h('div', { class: 'asset-name' }, label),
+      h('div', { class: 'asset-desc', style: { maxHeight: 'none', whiteSpace: 'pre-wrap', lineHeight: '1.7' } }, text || '—'));
+    modal({
+      title: `镜头 ${s.n} · 最终提示词`,
+      large: true,
+      body: h('div', {},
+        h('div', { class: 'hint' }, '这是真正发给模型的内容；改分镜字段后会同步变化。'),
+        row('关键帧提示词', imagePrompt(s, proj)),
+        row('视频提示词', videoPrompt(s, proj)),
+        (s.light || s.sound) ? h('div', { class: 'hint', style: { marginTop: '10px' } },
+          `光线：${s.light || '—'}　声音：${s.sound || '—'}`) : null),
+    });
   }
 
   /* 分镜：逐条审阅 + 每镜头模型 + 自然语言局部调整 */
@@ -331,10 +349,12 @@ function renderProject(root, proj) {
           h('span', { class: 'badge' + (s.frame ? ' ok' : '') }, s.frame ? '关键帧 ✓' : '无关键帧'),
           h('span', { class: 'badge' + (s.video ? ' ok' : '') }, s.video ? '片段 ✓' : '无片段'),
           s.status ? h('span', { class: 'badge warn' }, s.status) : null,
+          h('button', { class: 'node-btn sm', onclick: () => promptModal(s) }, '看提示词'),
           h('button', {
             class: 'node-btn sm', onclick: () => {
               s.frame = ''; s.video = ''; s.status = '排队重生成';
-              agent.st.cursor = 4; agent.save(); draw();
+              agent.st.cursor = STEPS.findIndex(x => x.key === 'storyboard');
+              agent.save(); draw();
               agent.run();
             },
           }, '重生成'))));
@@ -351,9 +371,10 @@ function renderProject(root, proj) {
       const b = e.currentTarget; b.disabled = true; b.textContent = '生成中…';
       try {
         const { genImage } = await import('../models.js');
-        const r = await genImage(`${s.desc}，${s.shot}，${proj.req?.style || ''}，电影感画面`, {
+        const r = await genImage(imagePrompt(s, proj), {
           size: proj.req?.ratio === '9:16' ? '720x1280' : '1280x720',
           images: (s.refs || []).slice(0, 1),
+          feature: 'agentImage',
         });
         s.frame = r.url; s.status = ''; agent.save(); draw();
       } catch (err) {
@@ -394,9 +415,10 @@ function renderProject(root, proj) {
       const b = e.currentTarget; b.disabled = true; b.textContent = '生成中…';
       try {
         const { genVideo } = await import('../models.js');
-        const r = await genVideo(`${s.desc}，${s.camera || ''}`, {
+        const r = await genVideo(videoPrompt(s, proj), {
           images: s.videoMode === 'text' ? [] : (s.frame ? [s.frame] : []),
           duration: s.dur || 5, ratio: proj.req?.ratio || '16:9',
+          feature: 'agentVideo',
         });
         s.video = r.url; s.status = ''; agent.save(); draw();
       } catch (err) {

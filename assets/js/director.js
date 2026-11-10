@@ -129,8 +129,14 @@ export async function openDirector(opts = {}) {
   scene.add(selectRing);
 
   function applyPose(ch, poseName, extra = {}) {
+    const parts = (ch && ch.userData && ch.userData.parts) || {};
+    /* 导入的 GLB 模型没有关节分组，套姿势会炸 —— 直接提示，不动它 */
+    if (!parts.armL || !parts.armR || !parts.legL || !parts.legR) {
+      toast('这个模型不支持姿势预设（只对内置人形角色有效）', 'err', 2600);
+      return;
+    }
     const p = POSES[poseName] || POSES['站立'];
-    const { armL, armR, legL, legR } = ch.userData.parts;
+    const { armL, armR, legL, legR } = parts;
     armL.rotation.x = p.armL + (extra.armL || 0);
     armR.rotation.x = p.armR + (extra.armR || 0);
     legL.rotation.x = p.legL + (extra.legL || 0);
@@ -138,7 +144,7 @@ export async function openDirector(opts = {}) {
     ch.userData.pose = poseName;
     const sit = !!p.sit;
     ch.position.y = sit ? -0.28 : 0;
-    ch.userData.parts.torso.rotation.x = p.torso || 0;
+    if (parts.torso) parts.torso.rotation.x = p.torso || 0;
   }
   characters.forEach(c => applyPose(c, '站立'));
 
@@ -247,11 +253,16 @@ export async function openDirector(opts = {}) {
     });
 
     poseRow.innerHTML = '';
-    for (const p of Object.keys(POSES)) {
-      poseRow.append(h('button', {
-        class: 'ratio-btn' + (selected?.userData.pose === p ? ' active' : ''),
-        onclick: () => { applyPose(selected, p); drawPanel(); }
-      }, p));
+    const canPose = !!(selected?.userData?.parts?.armL);
+    if (selected && !canPose) {
+      poseRow.append(h('div', { class: 'hint' }, '导入的 GLB 模型没有关节分组，不支持姿势预设'));
+    } else {
+      for (const p of Object.keys(POSES)) {
+        poseRow.append(h('button', {
+          class: 'ratio-btn' + (selected?.userData.pose === p ? ' active' : ''),
+          onclick: () => { applyPose(selected, p); drawPanel(); }
+        }, p));
+      }
     }
 
     extraRow.innerHTML = '';
@@ -264,16 +275,18 @@ export async function openDirector(opts = {}) {
     if (selected) {
       mk('朝向', 'rotY', -180, 180, 1, () => Math.round(selected.rotation.y * 180 / Math.PI),
         v => selected.rotation.y = v * Math.PI / 180);
-      mk('身高', 'scale', 0.6, 1.6, 0.05, () => selected.scale.y,
+      mk('身高', 'scale', 0.6, 1.6, 0.05, () => selected.scale.y || 1,
         v => selected.scale.setScalar(v));
-      mk('手臂 L', 'armL', -3, 1.2, 0.05, () => selected.userData.parts.armL.rotation.x,
-        v => selected.userData.parts.armL.rotation.x = v);
-      mk('手臂 R', 'armR', -3, 1.2, 0.05, () => selected.userData.parts.armR.rotation.x,
-        v => selected.userData.parts.armR.rotation.x = v);
-      mk('腿 L', 'legL', -1.6, 1.2, 0.05, () => selected.userData.parts.legL.rotation.x,
-        v => selected.userData.parts.legL.rotation.x = v);
-      mk('腿 R', 'legR', -1.6, 1.2, 0.05, () => selected.userData.parts.legR.rotation.x,
-        v => selected.userData.parts.legR.rotation.x = v);
+      if (canPose) {
+        mk('手臂 L', 'armL', -3, 1.2, 0.05, () => selected.userData.parts.armL.rotation.x,
+          v => selected.userData.parts.armL.rotation.x = v);
+        mk('手臂 R', 'armR', -3, 1.2, 0.05, () => selected.userData.parts.armR.rotation.x,
+          v => selected.userData.parts.armR.rotation.x = v);
+        mk('腿 L', 'legL', -1.6, 1.2, 0.05, () => selected.userData.parts.legL.rotation.x,
+          v => selected.userData.parts.legL.rotation.x = v);
+        mk('腿 R', 'legR', -1.6, 1.2, 0.05, () => selected.userData.parts.legR.rotation.x,
+          v => selected.userData.parts.legR.rotation.x = v);
+      }
     }
   }
 

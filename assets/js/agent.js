@@ -12,6 +12,7 @@
 import { store, uid } from './store.js';
 import { chat, genImage, genVideo } from './models.js';
 import { SKILLS, skillCatalog, hasSkill, deliverOf } from './skills.js';
+import { charPrompt, scenePrompt, imagePrompt, videoPrompt } from './prompts.js';
 const SKILL_KEYS = new Set(SKILLS.map(s => s.key));
 
 export const STEPS = [
@@ -25,7 +26,14 @@ export const STEPS = [
   { key: 'assemble',   label: '合成成片',   gate: false, manual: true, hint: '按顺序拼接成 MP4' },
 ];
 
-const VIDEO_FIELDS = ['desc', 'shot', 'camera', 'dialogue', 'dur'];
+const VIDEO_FIELDS = ['desc', 'shot', 'camera', 'light', 'sound', 'dialogue', 'dur'];
+
+/* 写作底线：所有要展示给人看的文字都走这套，避免「不通顺 / 碎片化 / 占位词」 */
+const WRITING_RULES = `写作要求（必须全部满足）：
+- 一律使用通顺、连贯的中文书面语，句子完整，主谓宾清楚，不用断句碎片堆砌；
+- 禁止出现「XXX」「待定」「同上」「参考前文」「此处省略」这类占位；
+- 禁止中英混杂（专有名词除外），禁止列表符号；
+- 不要解释你在做什么，只输出结果。`;
 
 /* 幂等判定：这一步的产物是不是已经有了 */
 export const DONE = {
@@ -103,11 +111,22 @@ ${skillCatalog()}
     if (DONE.plan(proj)) return;
     tick('正在理解创意…', 20);
     const r = await chat(
-      `把下面的创意整理成一份可执行的短视频制作方案，只输出 JSON：
+      `把下面的创意整理成一份可以直接执行的短视频制作方案，只输出 JSON：
 {"title":"标题","logline":"一句话梗概","duration":"总时长如60秒","ratio":"16:9 或 9:16","style":"视觉风格","tone":"情绪基调","audience":"目标观众"}
 
+字段要求：
+- title：8-14 字，有钩子，不加书名号，不要「未命名」；
+- logline：40-70 字，一句话讲清「谁 · 遇到什么事 · 要做什么 · 结果如何」，读起来像一句完整的话；
+- duration：写成「30秒 / 60秒 / 90秒」；
+- ratio：只能填 16:9 或 9:16；
+- style：25-45 字，写清年代、色调、质感、光影方向或参考方向（例：90 年代港片质感，低饱和青绿色调，胶片颗粒，柔和侧逆光），不要只写「电影感」；
+- tone：10-20 字，写情绪（例：荒诞里带点温情）；
+- audience：10-20 字。
+
+${WRITING_RULES}
+
 创意：${proj.logline}`,
-      { json: true, feature: 'agentText', system: '你是短剧制片人，输出必须是可以直接执行的中文方案，不要解释。' }
+      { json: true, feature: 'agentText', temperature: 0.7, system: '你是短剧制片人，输出必须是可以直接执行的中文方案。' }
     );
     proj.req = {
       title: r.title || '未命名', logline: r.logline || proj.logline,
@@ -121,14 +140,22 @@ ${skillCatalog()}
     tick('拆解角色与场景…', 25);
     const r = await chat(
       `根据制作方案写剧本大纲，只输出 JSON：
-{"synopsis":"剧情梗概（120字内）",
- "characters":[{"name":"","age":"","look":"外貌与服装","persona":"性格"}],
- "scenes":[{"name":"","env":"环境","light":"光线氛围"}],
+{"synopsis":"剧情梗概",
+ "characters":[{"name":"","age":"","look":"外貌与服装","persona":"性格与说话方式"}],
+ "scenes":[{"name":"","env":"环境与陈设","light":"光线氛围"}],
  "props":[{"name":"","desc":""}]}
+
+字段要求：
+- synopsis：180-260 字，写成一段连贯的文字，有起承转合（开场情境 → 冲突出现 → 转折或反转 → 收尾落点），读起来是一篇能直接念的小故事；不要分点、不要写「第一幕」「镜头一」这类结构标记；
+- characters：2-4 个。look 写清年龄感、体型、发型、服装款式与颜色、标志性物件，一句话不超过 50 字；persona 写性格 + 说话方式，不超过 30 字；
+- scenes：2-4 个。env 写空间结构、主要陈设、材质与年代，不超过 45 字；light 写主光源、色温、明暗对比，不超过 25 字；
+- props：2-4 个，desc 不超过 25 字，只写剧情里真的会用到的道具。
+
+${WRITING_RULES}
 
 方案：${JSON.stringify(proj.req)}
 创意：${proj.logline}`,
-      { json: true, feature: 'agentText' }
+      { json: true, feature: 'agentText', temperature: 0.7 }
     );
     proj.outline = {
       synopsis: r.synopsis || '',
@@ -147,9 +174,7 @@ ${skillCatalog()}
       if (c.image) continue;
       tick(`生成定妆图 ${i}/${list.length} · ${c.name}`, Math.round((i / Math.max(1, list.length)) * 90));
       const isChar = !('env' in c);
-      const prompt = isChar
-        ? `角色设定图：${c.name}，${c.age || ''}，${c.look || ''}，${c.persona || ''}，三视图，白底，清晰正面全身`
-        : `场景设定图：${c.name}，${c.env || ''}，${c.light || ''}，电影感，无人物`;
+      const prompt = isChar ? charPrompt(c) : scenePrompt(c);
       try {
         const r = await genImage(prompt, { size: '1024x1024', feature: 'agentImage' });
         c.image = r.url;
@@ -170,18 +195,33 @@ ${skillCatalog()}
     if (DONE.storyboard(proj)) return;
     tick('规划分镜…', 30);
     const r = await chat(
-      `根据以下内容拆解分镜，只输出 JSON 对象：{"shots":[{"n":1,"desc":"画面内容（谁在哪做什么）","shot":"景别","camera":"运镜","dialogue":"台词，没有就空字符串","dur":5}]}
-要求 6-8 个镜头，dur 为 4-10 的整数秒。
+      `根据以下内容拆解分镜，只输出 JSON 对象：
+{"shots":[{"n":1,"desc":"画面内容","shot":"景别","camera":"运镜","light":"光线","sound":"声音","dialogue":"台词","dur":5}]}
 
-方案：${JSON.stringify(proj.req)}
-大纲：${JSON.stringify({ synopsis: proj.outline?.synopsis, characters: proj.outline?.characters?.map(c => c.name), scenes: proj.outline?.scenes?.map(c => c.name) })}`,
-      { json: true, feature: 'agentText' }
+要求 6-8 个镜头，字段规则：
+- desc：60-100 字，必须写清「谁 · 在什么环境里 · 正在做什么动作 · 表情或情绪细节 · 画面里还有什么」。要像小说里的一小段，读起来通顺连贯；每条都要能独立作为出图提示词，不要写「同上」「接着上一镜」；
+- shot：只能从「大远景 / 远景 / 全景 / 中景 / 近景 / 特写 / 大特写」里选一个；
+- camera：只能从「固定 / 缓推 / 缓拉 / 横移 / 跟拍 / 环绕 / 升降 / 手持」里选一个，可再补一句运动说明；
+- light：15-25 字，写清主光源与色温（例：侧逆光，暖橙壁灯，暗部压深）；
+- sound：10-20 字，写环境声或音乐情绪；
+- dialogue：台词，没有就填空字符串；不超过 20 字，口语自然；
+- dur：4-10 的整数秒，全片总时长要接近方案里的 ${proj.req?.duration || '60秒'}。
+
+${WRITING_RULES}
+另外每个镜头之间要有推进关系（时间、空间或情绪上的变化），不要原地重复同一画面。
+
+方案：${JSON.stringify({ title: proj.req?.title, logline: proj.req?.logline, style: proj.req?.style, tone: proj.req?.tone })}
+梗概：${proj.outline?.synopsis || ''}
+角色：${(proj.outline?.characters || []).map(c => `${c.name}（${c.look || ''}；${c.persona || ''}）`).join('；')}
+场景：${(proj.outline?.scenes || []).map(c => `${c.name}（${c.env || ''}；${c.light || ''}）`).join('；')}`,
+      { json: true, feature: 'agentText', temperature: 0.75 }
     );
     const shots = Array.isArray(r) ? r : (r.shots || []);
     proj.storyboard = shots.map((s, i) => {
       const shot = {
-        n: s.n || i + 1, desc: s.desc || '', shot: s.shot || '中景', camera: s.camera || '静止',
-        dialogue: s.dialogue || '', dur: Math.min(10, Math.max(4, Number(s.dur) || 5)),
+        n: s.n || i + 1, desc: s.desc || '', shot: s.shot || '中景', camera: s.camera || '固定',
+        light: s.light || '', sound: s.sound || '', dialogue: s.dialogue || '',
+        dur: Math.min(10, Math.max(4, Number(s.dur) || 5)),
       };
       return { ...shot, ...routeShot(shot, proj), frame: '', video: '', status: '' };
     });
@@ -196,9 +236,8 @@ ${skillCatalog()}
       i++;
       if (s.frame) continue;
       tick(`生成关键帧 ${i}/${list.length} · 镜头 ${s.n}`, Math.round((i / Math.max(1, list.length)) * 92));
-      const style = proj.req?.style ? `${proj.req.style}，` : '';
       try {
-        const r = await genImage(`${s.desc}，${s.shot}，${style}电影感画面`, {
+        const r = await genImage(imagePrompt(s, proj), {
           size: proj.req?.ratio === '9:16' ? '720x1280' : '1280x720',
           images: (s.refs || []).slice(0, 1),
           feature: 'agentImage',
@@ -218,7 +257,7 @@ ${skillCatalog()}
       if (s.video) continue;
       tick(`生成片段 ${i}/${list.length} · 镜头 ${s.n}`, Math.round((i / Math.max(1, list.length)) * 90));
       try {
-        const r = await genVideo(`${s.desc}，${s.camera || ''}`, {
+        const r = await genVideo(videoPrompt(s, proj), {
           images: s.videoMode === 'text' ? [] : [...(s.frame ? [s.frame] : []), ...(s.refs || [])],
           duration: s.dur || 5,
           ratio: proj.req?.ratio || '16:9',
@@ -397,7 +436,8 @@ export class Agent {
   async nudge(text) {
     if (!(this.proj.storyboard || []).length) throw new Error('还没有分镜可改');
     const brief = this.proj.storyboard.map(s => ({
-      n: s.n, desc: s.desc, shot: s.shot, camera: s.camera, dialogue: s.dialogue, dur: s.dur,
+      n: s.n, desc: s.desc, shot: s.shot, camera: s.camera,
+      light: s.light, sound: s.sound, dialogue: s.dialogue, dur: s.dur,
     }));
     const r = await chat(
       `当前分镜（JSON）：${JSON.stringify(brief)}
@@ -405,9 +445,15 @@ export class Agent {
 用户的修改要求：${text}
 
 只输出 JSON：{"ops":[{"n":镜头号,"patch":{"字段":"新值"}}],"note":"一句话说明改了什么"}
-可改字段：${VIDEO_FIELDS.join(' / ')}。只输出真正需要改的镜头，没提到的镜头不要出现在 ops 里。
-如果用户要求增加/删除镜头，用 {"ops":[],"note":"说明了原因"} 并保持原样。`,
-      { json: true, feature: 'agentText', system: '你是剪辑导演，只做用户明确要求的局部修改，不要顺手改别的镜头。' }
+可改字段：${VIDEO_FIELDS.join(' / ')}。
+规则：
+- 只输出真正需要改的镜头，没提到的镜头不要出现在 ops 里；
+- 改动 desc 时必须重写成 60-100 字的完整描述（谁、在哪、做什么、表情细节、环境细节），不要只改几个词；
+- 保持与相邻镜头的时间、空间连贯，不要和其他镜头撞设定；
+- 如果用户要求增加 / 删除镜头，用 {"ops":[],"note":"说明了原因"} 并保持原样。
+
+${WRITING_RULES}`,
+      { json: true, feature: 'agentText', temperature: 0.6, system: '你是剪辑导演，只做用户明确要求的局部修改，不要顺手改别的镜头。' }
     );
     const ops = Array.isArray(r.ops) ? r.ops : [];
     const changed = [];
