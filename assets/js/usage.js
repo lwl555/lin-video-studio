@@ -114,6 +114,31 @@ export function addUsage(kind, n = 1) {
   } catch { /* ignore */ }
 }
 
+/* ---------- 单模型用量（平台每个模型 × 每人每天 的限流计数） ----------
+   存在 usage['账号|日期'].m = { [模型条目 id]: 数值 }
+   meter=count 时数值是次数，meter=points 时数值是积分口径 */
+export function modelUsageOf(acct, modelId, day = dayKey()) {
+  if (!acct || !modelId) return 0;
+  const u = usageStore()[keyOf(acct, day)];
+  const m = u && u.m && typeof u.m === 'object' ? u.m : {};
+  return Math.max(0, Number(m[modelId]) || 0);
+}
+
+export function addModelUsage(acct, modelId, amount = 1) {
+  if (!acct || !modelId) return 0;
+  const us = usageStore();
+  const k = keyOf(acct, dayKey());
+  const u = us[k] || (us[k] = { text: 0, image: 0, video: 0 });
+  if (!u.m || typeof u.m !== 'object') u.m = {};
+  u.m[modelId] = Math.max(0, Number(u.m[modelId]) || 0) + Math.max(0, Number(amount) || 0);
+  prune();
+  store.save();
+  try {
+    window.dispatchEvent(new CustomEvent('pavo-usage', { detail: { kind: 'model', modelId } }));
+  } catch { /* ignore */ }
+  return u.m[modelId];
+}
+
 /* 当前账号今日概览（给界面显示「今日 3/30」用） */
 export function todaySummary() {
   const acct = account();

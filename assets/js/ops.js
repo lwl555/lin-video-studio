@@ -196,6 +196,88 @@ export const quota = {
   }
 };
 
+/* ---------------- 平台默认模型（可配多条，每条独立限额） ----------------
+   结构：ops.models = [{id,type,name,model,baseUrl,apiKey,meter,daily,enabled,createdAt}]
+   · 同一类型（text/image/video）可以配多条，用户端在下拉里就能选
+   · meter：'count' 按次 / 'points' 按积分
+   · daily：每个用户每天可用上限（0 = 不限）
+   旧的 ops.defaults（每类型单条）在首次读取时自动迁移成一条记录。 */
+function migrateModels() {
+  const o = opsData();
+  if (!Array.isArray(o.models)) {
+    const out = [];
+    for (const t of QUOTA_KINDS) {
+      const d = (o.defaults || {})[t];
+      if (d && (d.model || d.baseUrl || d.apiKey)) {
+        out.push({
+          id: uid('pm'),
+          type: t,
+          name: KIND_LABEL[t] + ' 主模型',
+          model: d.model || '',
+          baseUrl: d.baseUrl || '',
+          apiKey: d.apiKey || '',
+          meter: t === 'video' ? 'points' : 'count',
+          daily: 0,
+          enabled: true,
+          createdAt: Date.now()
+        });
+      }
+    }
+    o.models = out;
+    store.save();
+  }
+  return o.models;
+}
+
+export const platformModels = {
+  list(type) {
+    const a = migrateModels();
+    const rows = type ? a.filter(x => x.type === type) : a.slice();
+    return rows.sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
+  },
+  add(type, patch = {}) {
+    const a = migrateModels();
+    const it = {
+      id: uid('pm'),
+      type: QUOTA_KINDS.includes(type) ? type : 'text',
+      name: String(patch.name || '').trim() || (KIND_LABEL[type] || '模型') + ' 新模型',
+      model: String(patch.model || '').trim(),
+      baseUrl: String(patch.baseUrl || '').trim(),
+      apiKey: String(patch.apiKey || '').trim(),
+      meter: patch.meter === 'points' ? 'points' : (patch.meter === 'count' ? 'count' : (type === 'video' ? 'points' : 'count')),
+      daily: Math.max(0, Math.round(Number(patch.daily) || 0)),
+      enabled: patch.enabled !== false,
+      createdAt: Date.now()
+    };
+    a.push(it);
+    store.save();
+    return it;
+  },
+  update(id, patch = {}) {
+    const it = migrateModels().find(x => x.id === id);
+    if (!it) return null;
+    const next = { ...it };
+    if (patch.name !== undefined) next.name = String(patch.name).trim() || it.name;
+    if (patch.model !== undefined) next.model = String(patch.model).trim();
+    if (patch.baseUrl !== undefined) next.baseUrl = String(patch.baseUrl).trim();
+    if (patch.apiKey !== undefined) next.apiKey = String(patch.apiKey).trim();
+    if (patch.meter !== undefined) next.meter = patch.meter === 'points' ? 'points' : 'count';
+    if (patch.daily !== undefined) next.daily = Math.max(0, Math.round(Number(patch.daily) || 0));
+    if (patch.enabled !== undefined) next.enabled = !!patch.enabled;
+    Object.assign(it, next);
+    store.save();
+    return it;
+  },
+  remove(id) {
+    const o = opsData();
+    o.models = migrateModels().filter(x => x.id !== id);
+    store.save();
+  },
+  byId(id) {
+    return migrateModels().find(x => x.id === id) || null;
+  }
+};
+
 /* ---------------- 时间工具 ---------------- */
 export const pad2 = n => String(n).padStart(2, '0');
 export const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;

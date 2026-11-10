@@ -7,7 +7,7 @@
 import { h, $, toast, modal, confirm, download } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, auth, ADMIN } from '../store.js';
-import { notices, invites, defaultModels, quota, fmtDate, KIND_LABEL, QUOTA_KINDS, dayKey } from '../ops.js';
+import { notices, invites, defaultModels, platformModels, quota, fmtDate, KIND_LABEL, QUOTA_KINDS, dayKey } from '../ops.js';
 import { overview, dailySeries, resetToday } from '../usage.js';
 import { openSupport, copyText, inviteMessage } from '../support.js';
 import { backendProvider } from '../backend.js';
@@ -529,7 +529,7 @@ export function render(root) {
     );
   }
 
-  /* ---------------- 平台默认模型 ---------------- */
+  /* ---------------- 平台默认模型（可配多条 · 每条独立限额） ---------------- */
   function modelsSection() {
     const presetModels = {
       text: ['agnes-3.0-flash', 'agnes-2.0-flash', 'agnes-2.5-pro', 'deepseek-chat', 'glm-4.6'],
@@ -537,53 +537,114 @@ export function render(root) {
       video: ['agnes-video-2.5-flash']
     };
 
+    function pick(sel, opts, value) {
+      for (const o of opts) sel.append(h('option', { value: o[0] }, o[1]));
+      sel.value = value;
+      return sel;
+    }
+
+    function entryBlock(type, e) {
+      const label = KIND_LABEL[type];
+      const modelInp = h('input', {
+        class: 'form-input', list: 'mdl-' + type,
+        value: e.model || '', placeholder: (presetModels[type] || [])[0] || '模型名'
+      });
+      const dl = h('datalist', { id: 'mdl-' + type },
+        ...(presetModels[type] || []).map(m => h('option', { value: m })));
+      const nameInp = h('input', { class: 'form-input', value: e.name || '', placeholder: '用户端下拉里显示的名称' });
+      const urlInp = h('input', { class: 'form-input', value: e.baseUrl || '', placeholder: 'https://api.agnes-ai.cn/v1（留空即内置）' });
+      const keyInp = h('input', { class: 'form-input', type: 'password', value: e.apiKey || '', placeholder: '留空即用内置 Key' });
+      const meterSel = pick(h('select', { class: 'form-select' }), [
+        ['count', '按次（一次成功生成 = 1）'],
+        ['points', '按积分（走价目表，视频推荐）']
+      ], e.meter === 'points' ? 'points' : 'count');
+      const dailyInp = h('input', { class: 'form-input', type: 'number', min: '0', value: String(e.daily || 0) });
+      const onInp = pick(h('select', { class: 'form-select' }), [
+        ['1', '启用（用户可选）'],
+        ['0', '停用（用户看不到）']
+      ], e.enabled === false ? '0' : '1');
+
+      const head = h('div', { class: 'adm-model-head' },
+        h('span', { class: 'adm-model-kind', html: icon(KIND_ICON[type], 16) }),
+        h('b', {}, label),
+        h('span', { class: 'badge' + (e.enabled === false ? '' : ' ok') }, e.enabled === false ? '已停用' : (e.model || '内置默认')));
+
+      const acts = h('div', { class: 'adm-acts' });
+      acts.append(
+        h('button', {
+          class: 'btn-primary', onclick: () => {
+            platformModels.update(e.id, {
+              name: nameInp.value, model: modelInp.value, baseUrl: urlInp.value, apiKey: keyInp.value,
+              meter: meterSel.value, daily: dailyInp.value, enabled: onInp.value === '1'
+            });
+            toast(label + '「' + (nameInp.value.trim() || modelInp.value.trim()) + '」已保存', 'ok');
+            draw();
+          }
+        }, '保存'),
+        h('button', {
+          class: 'btn-ghost', onclick: async () => {
+            if (!await confirm('删除默认模型「' + (e.name || e.model) + '」？用户端将看不到它。')) return;
+            platformModels.remove(e.id);
+            toast('已删除', 'ok');
+            draw();
+          }
+        }, '删除'));
+
+      const row1 = h('div', { class: 'adm-row3' },
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '显示名称'), nameInp),
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型名'), modelInp, dl),
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '启用状态'), onInp));
+      const row2 = h('div', { class: 'adm-row3' },
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL'), urlInp),
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'API Key'), keyInp),
+        h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '计量方式'), meterSel));
+      const row3 = h('div', { class: 'adm-row3' },
+        h('div', { class: 'form-group' },
+          h('label', { class: 'form-label' }, '每人每天上限（0 = 不限）'), dailyInp,
+          h('div', { class: 'hint' }, meterSel.value === 'points' ? '单位：积分。按价目表累计，用完即拦。' : '单位：次。一次成功生成算 1 次。')));
+
+      return h('div', { class: 'adm-model' }, head, row1, row2, row3, acts);
+    }
+
+    const typeCard = type => {
+      const list = platformModels.list(type);
+      const box = h('div', { class: 'adm-card' });
+      const head = h('div', { class: 'adm-card-head' },
+        h('div', { class: 'adm-card-title', style: { marginBottom: 0 } },
+          KIND_LABEL[type] + '模型（' + list.length + ' 条）'),
+        h('div', { class: 'adm-acts', style: { marginTop: 0 } },
+          h('button', {
+            class: 'node-btn', onclick: () => {
+              platformModels.add(type, {
+                name: KIND_LABEL[type] + ' 模型 ' + (list.length + 1),
+                model: (presetModels[type] || [])[0] || '',
+                meter: type === 'video' ? 'points' : 'count',
+                daily: 0
+              });
+              toast('已新增一条' + KIND_LABEL[type] + '模型，填好再保存', 'ok');
+              draw();
+            }
+          }, '+ 新增模型')));
+      box.append(head);
+      if (!list.length) {
+        box.append(h('div', { class: 'hint' }, '还没配置，用户端会回落到内置 Agnes 通道。'));
+      }
+      for (const e of list) box.append(entryBlock(type, e));
+      return box;
+    };
+
     return h('div', {},
       h('div', { class: 'adm-card' },
-        h('div', { class: 'adm-card-title' }, '平台默认模型'),
-        h('div', { class: 'hint', style: { margin: '0 0 6px' } },
-          '这里决定「平台默认」到底走哪个模型。用户端看不到这些配置，只能看到模型名。留空 = 沿用内置通道（Agnes）。'),
-        ...QUOTA_KINDS.map(k => {
-          const cur = defaultModels.get(k);
-          const active = backendProvider(k).model;
-          const modelInp = h('input', {
-            class: 'form-input', list: 'mdl-' + k,
-            placeholder: active, value: cur.model
-          });
-          const urlInp = h('input', { class: 'form-input', placeholder: 'https://api.agnes-ai.cn/v1（留空即内置）', value: cur.baseUrl });
-          const keyInp = h('input', { class: 'form-input', type: 'password', placeholder: '留空即用内置 Key', value: cur.apiKey });
-          const dl = h('datalist', { id: 'mdl-' + k }, ...(presetModels[k] || []).map(m => h('option', { value: m })));
-
-          return h('div', { class: 'adm-model' },
-            h('div', { class: 'adm-model-head' },
-              h('span', { class: 'adm-model-kind', html: icon(KIND_ICON[k], 16) }),
-              h('b', {}, KIND_LABEL[k]),
-              h('span', { class: 'badge' + (defaultModels.isCustom(k) ? ' ok' : '') }, `当前：${active}`)),
-            h('div', { class: 'adm-row3' },
-              h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '模型名'), modelInp, dl),
-              h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'Base URL'), urlInp),
-              h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, 'API Key'), keyInp)),
-            h('div', { class: 'adm-acts' },
-              h('button', {
-                class: 'btn-primary', onclick: () => {
-                  defaultModels.set(k, {
-                    model: modelInp.value.trim(),
-                    baseUrl: urlInp.value.trim(),
-                    apiKey: keyInp.value.trim()
-                  });
-                  toast(`${KIND_LABEL[k]}默认模型已更新：${modelInp.value.trim() || '内置默认'}`, 'ok');
-                  draw();
-                }
-              }, '保存'),
-              h('button', {
-                class: 'btn-ghost', onclick: async () => {
-                  if (!await confirm(`把${KIND_LABEL[k]}恢复成内置默认模型？`)) return;
-                  defaultModels.clear(k); toast('已恢复内置默认', 'ok'); draw();
-                }
-              }, '恢复内置')));
-        })),
+        h('div', { class: 'adm-card-title' }, '平台默认模型（可配多条）'),
+        h('div', { class: 'hint', style: { margin: '0' } },
+          '同一类型可以配多条：用户端下拉里就能看到并切换。每条都能单独设「计量方式 + 每人每天上限」，删掉或停用即刻生效。')),
+      typeCard('text'),
+      typeCard('image'),
+      typeCard('video'),
       h('div', { class: 'adm-card' },
         h('div', { class: 'hint', style: { margin: '0' } },
-          'Key 只存在这台电脑的浏览器里，不会上传。用户端的「功能模型」里选「平台默认」就会走到这里配置的模型。')));
+          '计量方式：按次 = 一次成功生成计 1 次（文本/图片推荐）；按积分 = 按价目表累计积分（视频推荐，4 秒和 12 秒不一样贵）。' +
+          '上限只限制「这个模型」，与积分余额、等级额度叠加生效。Key 只存在这台电脑的浏览器里。')));
   }
 
   draw();

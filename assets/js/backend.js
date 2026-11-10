@@ -13,6 +13,7 @@
    覆盖项存在本地状态里，这里直接读，保持「前端不暴露平台密钥」的原则：
    界面只显示模型名与管理员自己填的内容，内置 Key 始终不出现在任何界面。 */
 import { store } from './store.js';
+import { platformModels } from './ops.js';
 
 const AGNES = {
   baseUrl: 'https://api.agnes-ai.cn/v1',
@@ -51,21 +52,61 @@ function overrideOf(type) {
   };
 }
 
-/* 取某类型的有效 provider（供 models.js 调用，不含任何 UI 字段） */
+/* 把「后台配置的一条模型记录」解析成真正要连的通道。
+   只覆盖填了的字段：模型名留空 = 内置默认；地址/Key 留空 = 沿用内置通道。
+   返回值里带上 entry，模型层据此做「每人每天额度」的计量。 */
+export function entryConfig(entry) {
+  const builtinModel = BACKEND.agnes.models[entry.type] || BACKEND.agnes.models.text;
+  const model = String(entry.model || '').trim() || builtinModel;
+
+  if (BACKEND.proxyUrl && !String(entry.baseUrl || '').trim()) {
+    return { baseUrl: BACKEND.proxyUrl.replace(/\/$/, ''), apiKey: '', model, proxy: true, entry };
+  }
+  return {
+    baseUrl: (String(entry.baseUrl || '').trim() || BACKEND.agnes.baseUrl).replace(/\/+$/, ''),
+    apiKey: String(entry.apiKey || '').trim() || BACKEND.agnes.apiKey,
+    model,
+    proxy: false,
+    entry
+  };
+}
+
+/* 某类型下所有「可被用户选中」的平台模型（管理后台配了几条就有几个） */
+export function platformProviders(type) {
+  return platformModels.list(type)
+    .filter(e => e.enabled !== false)
+    .map(e => ({
+      id: '__pm_' + e.id,
+      entryId: e.id,
+      name: e.name || e.model || '平台模型',
+      type,
+      model: e.model || BACKEND.agnes.models[type] || '',
+      platform: true,
+      meter: e.meter,
+      daily: e.daily,
+      enabled: true
+    }));
+}
+
+/* 取某类型的有效 provider（供 models.js 调用，不含任何 UI 字段）。
+   有多条平台模型时取第一条；没有配置时走内置 Agnes 通道。 */
 export function backendProvider(type) {
+  const live = platformModels.list(type).filter(e => e.enabled !== false);
+  if (live.length) {
+    const c = entryConfig(live[0]);
+    return { baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, proxy: c.proxy, entry: c.entry };
+  }
   const ov = overrideOf(type);
   const builtinModel = BACKEND.agnes.models[type] || BACKEND.agnes.models.text;
   const model = ov.model || builtinModel;
-
-  /* 代理模式：前端只把请求发给代理，密钥由代理侧注入。
-     管理员如果单独给这个类型指了地址，则优先按管理员配置直连 */
   if (BACKEND.proxyUrl && !ov.baseUrl) {
-    return { baseUrl: BACKEND.proxyUrl.replace(/\/$/, ''), apiKey: '', model, proxy: true };
+    return { baseUrl: BACKEND.proxyUrl.replace(/\/$/, ''), apiKey: '', model, proxy: true, entry: null };
   }
   return {
     baseUrl: (ov.baseUrl || BACKEND.agnes.baseUrl).replace(/\/+$/, ''),
     apiKey: ov.apiKey || BACKEND.agnes.apiKey,
     model,
-    proxy: false
+    proxy: false,
+    entry: null
   };
 }

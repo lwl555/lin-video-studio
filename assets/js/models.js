@@ -1,6 +1,6 @@
 /* ============ 模型接入层（BYOK） ============ */
 import { store, uid } from './store.js';
-import { ensureQuota, addUsage } from './usage.js';
+import { ensureQuota, addUsage, modelUsageOf, addModelUsage } from './usage.js';
 import { quoteImage, quoteVideo, quoteText, assertAffordable, settle, TEXT_COST_LABEL } from './points.js';
 
 /* 预设：用户一键填充，也可完全自定义 */
@@ -27,18 +27,24 @@ export const PRESETS = [
 
 export const TYPE_LABEL = { text: '文本/剧情', image: '图像', video: '视频', audio: '音频/TTS（预留）' };
 
-/* 当列表为空（用户不再手动配置模型）时，用预配置后台充当默认 provider，
+/* 当列表为空时，用预配置后台充当默认 provider，
    这样首页 / 图像 / 视频 / 画布等原有的「模型选择器」不会退化成「未接入」 */
 function backendAsProvider(t) {
-  /* 模型名是公开标识（agnes-3.0-flash 等），不是密钥也不是地址，可放心展示，
-     这样首页模型条 / 图像·视频下拉能直接看到平台当前用的是哪个模型 */
   const m = backendProvider(t).model || '已连接';
-  return { id: '__backend', name: '平台 AI 后台', type: t, model: m, enabled: true, apiKey: '', baseUrl: '' };
+  return { id: '__backend', name: '平台 AI 后台', type: t, model: m, enabled: true, apiKey: '', baseUrl: '', platform: true };
 }
+
+/* 平台模型列表：管理后台配了几条就有几条；一条都没配时给一个内置兜底条目，
+   保证老用户的下拉和「生成」按钮不会突然空掉 */
+function platformList(t) {
+  const list = platformProviders(t);
+  return list.length ? list : [backendAsProvider(t)];
+}
+
 export const providers = {
-  all: () => { const a = store.list('providers'); return a.length ? a : [backendAsProvider('text'), backendAsProvider('image'), backendAsProvider('video')]; },
-  /* 平台后台永远排第一位（默认可用、开箱即用）；用户自带的模型排在其后，可在下拉里自行切换 */
-  byType: t => [backendAsProvider(t), ...store.list('providers').filter(p => p.type === t && p.enabled !== false)],
+  all: () => [...platformList('text'), ...platformList('image'), ...platformList('video'), ...store.list('providers')],
+  /* 平台配的模型永远排前面（开箱即用）；用户自带的 BYOK 排后面 */
+  byType: t => [...platformList(t), ...store.list('providers').filter(p => p.type === t && p.enabled !== false)],
   defaultOf: t => providers.byType(t)[0] || null,
   add(p) { return store.add('providers', { id: uid('pv'), enabled: true, ...p }); },
   update(id, patch) { return store.update('providers', id, patch); },
@@ -82,8 +88,34 @@ async function withRetry(fn, { tries = 3, base = 800 } = {}) {
 }
 
 /* ---------- 后端通道：平台预配置，用户完全不可见 ---------- */
-import { BACKEND, backendProvider } from './backend.js';
+import { BACKEND, backendProvider, platformProviders, entryConfig } from './backend.js';
+import { platformModels } from './ops.js';
 const DEFAULT_TIMEOUT = 60000;
+
+/* ---------- 平台模型「每人每天额度」（管理后台逐条配） ----------
+   meter=count：按次；meter=points：按价目表的积分口径
+   管理员不受限，但照样计数，方便后台看真实消耗 */
+function assertModelQuota(conn) {
+  const e = conn && conn.entry;
+  if (!e || !e.daily) return;
+  if (store.state.session?.role === 'admin') return;
+  const acct = store.state.session?.account || '';
+  if (!acct) return;
+  const used = modelUsageOf(acct, e.id);
+  if (used < e.daily) return;
+  const unit = e.meter === 'points' ? '积分' : '次';
+  const err = new Error(`「${e.name || e.model}」今天的额度已用完（${used}/${e.daily} ${unit}），明天 0 点重置。可以在模型下拉里换一个模型继续。`);
+  err.modelQuotaExceeded = true;
+  throw err;
+}
+
+function chargeModelQuota(conn, amount) {
+  const e = conn && conn.entry;
+  if (!e || !e.daily) return;
+  const acct = store.state.session?.account || '';
+  if (!acct) return;
+  addModelUsage(acct, e.id, e.meter === 'points' ? Math.max(0, Math.round(Number(amount) || 0)) : 1);
+}
 
 /* 后台是否启用（用户可在「设置」开关，持久化在 store.state.backend.enabled） */
 function backendOn() {
@@ -95,14 +127,28 @@ function backendOn() {
    - 用户自己添加的模型（有 Base URL / Key）→ 走他自己的地址与 Key
    - 平台占位 provider / 未选 → 走平台预配置后台（配置对用户不可见） */
 function resolveConn(sel, type) {
+  /* 1) 管理后台配置的平台模型条目（用户在下拉里选中的那一条） */
+  if (sel && sel.entryId) {
+    const e = platformModels.byId(sel.entryId);
+    if (e) return entryConfig(e);
+  }
+  /* 2) 用户自己添加的模型（有 Base URL / Key）→ 走他自己的地址与 Key */
   if (sel && sel.id && sel.id !== '__backend' && (sel.baseUrl || sel.apiKey)) {
     const base = String(sel.baseUrl || '').replace(/\/+$/, '');
     if (!base) throw new Error('这个模型没填 Base URL，去「模型接入 → 我的模型」补全');
     if (!sel.apiKey) throw new Error('这个模型没填 API Key，去「模型接入 → 我的模型」补全');
-    return { baseUrl: base, apiKey: sel.apiKey, model: sel.model || '', own: true };
+    return { baseUrl: base, apiKey: sel.apiKey, model: sel.model || '', own: true, entry: null };
   }
+  /* 3) 平台默认：第一条平台模型，或内置 Agnes 通道 */
   const b = backendProvider(type);
-  return { baseUrl: String(b.baseUrl).replace(/\/+$/, ''), apiKey: b.apiKey || '', model: b.model, own: false, proxy: !!b.proxy };
+  return {
+    baseUrl: String(b.baseUrl).replace(/\/+$/, ''),
+    apiKey: b.apiKey || '',
+    model: b.model,
+    own: false,
+    proxy: !!b.proxy,
+    entry: b.entry || null
+  };
 }
 
 async function request(path, { base, own = false, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
@@ -155,6 +201,7 @@ export async function chat(prompt, { provider, feature, system = '', json = fals
   let bill = null;
   if (metering) { ensureQuota('text'); bill = assertAffordable('text', quoteText(costKind)); }
   const p = resolveConn(provider || featureProvider(feature), 'text');
+  if (metering) assertModelQuota(p);          /* 该模型的每人每天额度 */
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : prompt;
@@ -174,7 +221,11 @@ export async function chat(prompt, { provider, feature, system = '', json = fals
     ?? b?.output?.text
     ?? (typeof b.raw === 'string' ? b.raw : '');
   if (!text) throw new Error('模型返回为空：' + JSON.stringify(b).slice(0, 200));
-  if (metering) { addUsage('text'); settle('text', bill, TEXT_COST_LABEL[costKind] || '文本生成'); }   /* 拿到了内容才算一次用量+扣费 */
+  if (metering) {
+    addUsage('text');
+    settle('text', bill, TEXT_COST_LABEL[costKind] || '文本生成');
+    chargeModelQuota(p, quoteText(costKind));
+  }   /* 拿到了内容才算一次用量+扣费 */
   if (json) {
     const m = String(text).match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!m) throw new Error('模型未返回 JSON');
@@ -187,8 +238,10 @@ export async function chat(prompt, { provider, feature, system = '', json = fals
 export async function genImage(prompt, { provider, feature, size = '1024x1024', n = 1, images = [] } = {}) {
   ensureQuota('image');
   /* 额度内不扣积分；额度外要求余额够，否则抛错（按钮据此提示充值） */
-  const bill = assertAffordable('image', quoteImage(size, { withRef: images.length > 0, n }));
+  const imgCost = quoteImage(size, { withRef: images.length > 0, n });
+  const bill = assertAffordable('image', imgCost);
   const p = resolveConn(provider || featureProvider(feature), 'image');
+  assertModelQuota(p);                        /* 该模型的每人每天额度 */
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
   const res = await withRetry(
@@ -201,6 +254,7 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
   if (!url) throw new Error('图像生成失败：' + JSON.stringify(b).slice(0, 250));
   addUsage('image', Math.max(1, Math.round(Number(n) || 1)));   /* 按张数计 */
   settle('image', bill, `图片 ${size}${images.length ? ' · 图生图' : ''}`);
+  chargeModelQuota(p, imgCost);
   return { url, raw: b };
 }
 
@@ -208,12 +262,14 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
 export async function genVideo(prompt, { provider, feature, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
   ensureQuota('video');
   /* 按秒计价：480P 3/秒、720P 8/秒、2K 15/秒；首尾帧 +20%，参考图 +30% */
-  const bill = assertAffordable('video', quoteVideo(duration, {
+  const vidCost = quoteVideo(duration, {
     resolution: '720P',
     keyframe: !!(firstFrame || lastFrame),
     ref: images.filter(Boolean).length > 0
-  }));
+  });
+  const bill = assertAffordable('video', vidCost);
   const p = resolveConn(provider || featureProvider(feature), 'video');
+  assertModelQuota(p);                        /* 该模型的每人每天额度 */
   const base = p.baseUrl;                                          // 例如 https://api.agnes-ai.cn/v1
   /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1）；
      其它家（用户自带）走通用的 /video/generations + /video/status */
@@ -250,7 +306,7 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
   const res = await request(submitPath, { base, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
-  if (direct) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); return { url: direct, raw: b }; }
+  if (direct) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); chargeModelQuota(p, vidCost); return { url: direct, raw: b }; }
   const id = b?.video_id || b?.id || b?.task_id || b?.data?.video_id || b?.data?.id;
   if (!id) throw new Error('视频任务提交失败（未取到任务 ID）：' + JSON.stringify(b).slice(0, 250));
 
@@ -268,10 +324,10 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
     const url = sb?.url || sb?.video_url || sb?.data?.url || sb?.result?.url;
     if (done) {
       if (!url) throw new Error('任务完成但未返回视频地址：' + JSON.stringify(sb).slice(0, 200));
-      addUsage('video'); settle('video', bill, `视频 ${duration}s`);
+      addUsage('video'); settle('video', bill, `视频 ${duration}s`); chargeModelQuota(p, vidCost);
       return { url, raw: sb };
     }
-    if (url) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); return { url, raw: sb }; }
+    if (url) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); chargeModelQuota(p, vidCost); return { url, raw: sb }; }
     if (fail) throw new Error('视频生成失败：' + JSON.stringify(sb.error || sb).slice(0, 200));
   }
   throw new Error('视频生成超时，请稍后重试');
