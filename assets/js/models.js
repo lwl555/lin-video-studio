@@ -243,17 +243,32 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
   const p = resolveConn(provider || featureProvider(feature), 'image');
   assertModelQuota(p);                        /* 该模型的每人每天额度 */
   const body = { model: p.model, prompt, n, size };
-  if (images.length) body.image = images[0];
-  const res = await withRetry(
-    () => request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 }),
-    { tries: 2, base: 1200 });
+  const refs = (images || []).filter(Boolean).slice(0, 3);
+  if (refs.length) body.image = refs[0];          /* 主参考图：多数模型只认这一张 */
+  if (refs.length > 1) body.images = refs;        /* 多参考：支持的服务会一起看，不支持的会报错→下面回退 */
+
+  let res;
+  try {
+    res = await withRetry(
+      () => request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 }),
+      { tries: 2, base: 1200 });
+  } catch (e) {
+    /* 多图字段被拒（HTTP 4xx）时，退回只发主参考图再试一次，不让能力探测拖垮出图 */
+    if (refs.length > 1 && /^HTTP 4\d\d/.test(String(e && e.message))) {
+      const b2 = { ...body };
+      delete b2.images;
+      res = await withRetry(
+        () => request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body: b2, timeout: 180000 }),
+        { tries: 2, base: 1200 });
+    } else throw e;
+  }
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
   if (!url && b?.images?.[0]?.url) url = b.images[0].url;
   if (!url) throw new Error('图像生成失败：' + JSON.stringify(b).slice(0, 250));
   addUsage('image', Math.max(1, Math.round(Number(n) || 1)));   /* 按张数计 */
-  settle('image', bill, `图片 ${size}${images.length ? ' · 图生图' : ''}`);
+  settle('image', bill, `图片 ${size}${refs.length > 1 ? ' · 多参考图' : refs.length ? ' · 图生图' : ''}`);
   chargeModelQuota(p, imgCost);
   return { url, raw: b };
 }

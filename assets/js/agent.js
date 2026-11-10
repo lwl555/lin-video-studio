@@ -52,6 +52,31 @@ export const DONE = {
 };
 
 /* 为每个分镜挑生成路径：特写先锁表情、大场景直接文生、有角色参考就走参考图 */
+/* 参考图挑选（ViMax 的时间轴思路）：
+   1) 角色图优先 —— 保证人物不换脸；
+   2) 同场次的上一镜画面 —— 保证墙面、陈设、光线方向不跳；
+   3) 都没有就纯文生图。
+   最多 3 张，主参考（image 字段）始终是角色图。 */
+export function refsFor(shots, idx, proj) {
+  const s = shots[idx] || {};
+  const out = [];
+  const push = u => { if (u && out.length < 3 && !out.includes(u)) out.push(u); };
+
+  for (const u of (s.refs || [])) push(u);
+
+  const sceneOf = x => {
+    const dl = String(x.desc || '');
+    const hit = (proj && proj.outline && proj.outline.scenes || []).find(sc => sc.name && dl.includes(sc.name));
+    return hit ? hit.name : '';
+  };
+  const cur = sceneOf(s);
+  const prev = shots[idx - 1];
+  const wide = /大远景|远景|空镜/.test(String(s.shot || '') + String(s.desc || ''));
+  if (prev && prev.frame && cur && sceneOf(prev) === cur && !wide) push(prev.frame);
+
+  return out;
+}
+
 export function routeShot(s, proj) {
   const text = `${s.desc || ''} ${s.shot || ''} ${s.camera || ''}`;
   const close = /特写|近景|大特写/.test(text);
@@ -274,15 +299,20 @@ ${WRITING_RULES}
   async frames(proj, tick) {
     if (!hasSkill(proj, 'image')) return;
     const list = proj.storyboard || [];
-    let i = 0;
-    for (const s of list) {
-      i++;
+    for (let idx = 0; idx < list.length; idx++) {
+      const s = list[idx];
       if (s.frame) continue;
-      tick(`生成关键帧 ${i}/${list.length} · 镜头 ${s.n}`, Math.round((i / Math.max(1, list.length)) * 92));
+      tick(`生成关键帧 ${idx + 1}/${list.length} · 镜头 ${s.n}`, Math.round(((idx + 1) / Math.max(1, list.length)) * 92));
       try {
-        const r = await genImage(imagePrompt(s, proj), {
+        const refs = refsFor(list, idx, proj);
+        const prevFrame = idx > 0 ? list[idx - 1].frame : '';
+        const usedPrev = !!prevFrame && refs.includes(prevFrame);
+        const prompt = imagePrompt(s, proj) + (usedPrev
+          ? '，与上一镜是同一场景：墙面与陈设的位置、家具样式、光线方向保持一致，不要换空间'
+          : '');
+        const r = await genImage(prompt, {
           size: proj.req?.ratio === '9:16' ? '720x1280' : '1280x720',
-          images: (s.refs || []).slice(0, 1),
+          images: refs,
           feature: 'agentImage',
         });
         s.frame = r.url; s.status = '';
