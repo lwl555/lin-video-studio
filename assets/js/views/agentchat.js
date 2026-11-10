@@ -3,7 +3,7 @@
    关键节点在对话里直接「通过 / 重跑 / 一句话改」，不用跳表单式工作台。
    精细编辑仍可一键转到 studio。
    ================================================================ */
-import { h, toast } from '../ui.js';
+import { h, toast, esc } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, uid, saveMedia } from '../store.js';
 import { go } from '../app.js';
@@ -18,6 +18,19 @@ const STATUS_TXT = {
 
 function statusText(a) { return STATUS_TXT[a.status] || '待开始'; }
 function gateLabel(key) { return STEPS.find(s => s.key === key)?.label || ''; }
+
+/* 气泡里的轻量 Markdown：加粗 / 行内代码 / 列表 / 换行
+   先转义再做替换，避免模型输出里的尖括号被当 HTML 执行 */
+const CODE_STYLE = 'background:#F2F3F5;padding:1px 5px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px';
+function richText(t) {
+  return esc(String(t == null ? '' : t))
+    .replace(/`([^`\n]+)`/g, '<code style="' + CODE_STYLE + '">$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/__([^_\n]+)__/g, '<b>$1</b>')
+    .replace(/(^|\n)\s*[-·]\s+/g, '$1• ')
+    .replace(/(^|\n)(#{1,4})\s+/g, '$1')
+    .replace(/\n/g, '<br>');
+}
 
 export function render(root, params = {}) {
   let proj = params.id ? store.find('series', params.id) : null;
@@ -272,18 +285,10 @@ export function render(root, params = {}) {
 
     push('user', line);
 
-    /* 聊天模式 / 带了附件 / 明显不是做片需求 → 走助手对话，不动生产流水线 */
+    /* 1) 已经排好分镜：这句话是对镜头的局部修改 */
     const noBoard = !(proj.storyboard || []).length;
-    if (proj.mode === 'chat' || (noBoard && (hasAttach || !wantsProduction(text)))) {
-      proj.mode = 'chat';
-      store.save();
+    if (!noBoard) {
       clearAttach();
-      await chatReply(text, imgs, docs);
-      return;
-    }
-    clearAttach();
-
-    if ((proj.storyboard || []).length) {
       try {
         const r = await agent.nudge(text);
         if (r.changed.length) {
@@ -296,11 +301,31 @@ export function render(root, params = {}) {
       return;
     }
 
-    if (a.status === 'waiting') { agent.approve(); return; }
-    if (a.status === 'error') { agent.run(); return; }
-    if (a.status === 'done') { createProject(text); return; }
-    if (!proj.logline) proj.logline = text;
-    agent.run();
+    /* 2) 流水线正等你确认：说「继续 / 好」就往下走 */
+    if (a.status === 'waiting' && !hasAttach && !/^(不|别|先不|等等|等一下)/.test(text)) {
+      proj.mode = 'prod';
+      store.save();
+      clearAttach();
+      agent.approve();
+      return;
+    }
+
+    /* 3) 明确要开工：聊天模式下也能一句话转生产（之前进了对话就再也出不了片） */
+    if (!hasAttach && wantsProduction(text)) {
+      proj.mode = 'prod';
+      if (!proj.logline) proj.logline = text;
+      store.save();
+      clearAttach();
+      paintTask();
+      agent.run();
+      return;
+    }
+
+    /* 4) 其余一律当对话：带附件、提问、模糊需求都走这里 */
+    if (proj.mode !== 'chat') { proj.mode = 'chat'; store.save(); }
+    clearAttach();
+    paintTask();
+    await chatReply(text, imgs, docs);
   }
 
   /* ================= 渲染 ================= */
@@ -318,7 +343,7 @@ export function render(root, params = {}) {
     headEl.append(
       h('div', { class: 'ac-head-main' },
         h('div', { class: 'ac-title' }, 'Agent'),
-        h('div', { class: 'ac-sub' }, '一句话派活：我拆任务、出方案、排分镜、生成成片；关键节点你说了算。')),
+        h('div', { class: 'ac-sub' }, '既能聊（看图、读文档、问功能），也能干活（一句话出方案、分镜、成片）。')),
       h('div', { class: 'ac-head-actions' }, mSwitch));
   }
 
@@ -336,9 +361,12 @@ export function render(root, params = {}) {
       return;
     }
     for (const m of proj.chat || []) {
-      msgWrap.append(h('div', { class: 'ac-msg ' + (m.role === 'user' ? 'me' : 'ai') },
-        h('div', { class: 'ac-av', html: icon(m.role === 'user' ? 'chat' : 'spark', 15) }),
-        h('div', { class: 'ac-bub' }, m.text)));
+      const isMe = m.role === 'user';
+      msgWrap.append(h('div', { class: 'ac-msg ' + (isMe ? 'me' : 'ai') },
+        h('div', { class: 'ac-av', html: icon(isMe ? 'chat' : 'spark', 15) }),
+        isMe
+          ? h('div', { class: 'ac-bub' }, m.text)
+          : h('div', { class: 'ac-bub', html: richText(m.text) })));
     }
     lastCount = (proj.chat || []).length;
   }
@@ -352,12 +380,41 @@ export function render(root, params = {}) {
     requestAnimationFrame(() => { logEl.scrollTop = logEl.scrollHeight; });
   }
 
+  /* 对话模式的状态条：不催工，只提示「想开工就说」 */
+  function paintChatBar() {
+    const bar = h('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+        padding: '10px 12px', border: '1px solid var(--line)', borderRadius: '12px', background: '#fff'
+      }
+    });
+    bar.append(
+      h('span', { class: 'ac-dot' }),
+      h('span', { style: { fontSize: '12.5px', color: 'var(--txt-2)' } },
+        '对话模式：随便问、随便聊，发图片和文档我也能看'),
+      h('span', { style: { flex: '1 1 auto' } }),
+      h('button', {
+        class: 'node-btn',
+        onclick: () => {
+          const lastUser = (proj.chat || []).filter(m => m.role === 'user').slice(-1)[0];
+          proj.mode = 'prod';
+          if (!proj.logline) proj.logline = lastUser?.text || '新片';
+          store.save();
+          paintTask();
+          agent.run();
+        }
+      }, '开始做片')
+    );
+    taskEl.append(bar);
+  }
+
   function paintTask() {
     taskEl.innerHTML = '';
     if (!proj) { taskEl.classList.add('hidden'); return; }
     taskEl.classList.remove('hidden');
-    const a = proj.agent;
-    const dotCls = a.status === 'running' ? 'ac-dot on' : a.status === 'error' ? 'ac-dot err' : 'ac-dot';
+    /* 聊天模式下不要摆「0 个分镜 / 开始执行」那套催工卡，改成一条对话模式条 */
+    if (proj.mode === 'chat' && !(proj.storyboard || []).length) { paintChatBar(); return; }
+    const a = proj.agent;    const dotCls = a.status === 'running' ? 'ac-dot on' : a.status === 'error' ? 'ac-dot err' : 'ac-dot';
     taskEl.append(h('div', { class: 'ac-task-h' },
       h('span', { class: dotCls }),
       h('span', { class: 'ac-state ' + a.status }, statusText(a)),
