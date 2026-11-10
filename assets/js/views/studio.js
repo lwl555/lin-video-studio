@@ -4,6 +4,7 @@ import { icon } from '../icons.js';
 import { store, uid } from '../store.js';
 import { go } from '../app.js';
 import { Agent, STEPS, DONE, newProject } from '../agent.js';
+import { skillLabel } from '../skills.js';
 
 const MODE_TXT = {
   auto: '全自动：Agent 一路跑到底，只在失败时停。适合先出一版粗剪看方向。',
@@ -140,7 +141,7 @@ function renderProject(root, proj) {
 
     /* 内容 */
     content.innerHTML = '';
-    ({ plan: drawPlan, outline: drawOutline, assets: drawAssets, storyboard: drawStoryboard, frames: drawFrames, video: drawVideo, assemble: drawAssemble })[STEPS[a.cursor].key]();
+    ({ think: drawPlan, plan: drawPlan, outline: drawOutline, assets: drawAssets, storyboard: drawStoryboard, frames: drawFrames, video: drawVideo, assemble: drawAssemble })[STEPS[a.cursor].key]();
 
     /* 底部动作 */
     foot.innerHTML = '';
@@ -159,7 +160,7 @@ function renderProject(root, proj) {
         h('button', { class: 'btn-primary', onclick: () => { agent.st.cursor = STEPS.length - 1; agent.save(); draw(); } }, '去合成 →'));
     } else if (a.status === 'done') {
       foot.append(h('div', { class: 'gate-note' }, '这条链路完成了'),
-        h('button', { class: 'btn-ghost', onclick: () => { agent.rewind(3); draw(); } }, '回到分镜重做'),
+        h('button', { class: 'btn-ghost', onclick: () => { agent.rewind(STEPS.findIndex(s => s.key === 'storyboard')); draw(); } }, '回到分镜重做'),
         h('button', { class: 'btn-ghost', onclick: () => go('canvas', {}) }, '转到画布'));
     } else if (a.status === 'running') {
       foot.append(h('div', { class: 'gate-note' }, 'Agent 正在执行，可随时切到全自动或暂停'));
@@ -191,7 +192,14 @@ function renderProject(root, proj) {
   }
 
   function drawPlan() {
-    content.append(h('div', { class: 'page-sub' }, 'Agent 第一步：把一句话变成可执行的制作方案。改完再往下走。'));
+    content.append(h('div', { class: 'page-sub' }, 'Agent 第一步：先想清楚要调用哪些技能，再把一句话变成可执行的制作方案。改完再往下走。'));
+    if (proj.think) {
+      content.append(h('div', { class: 'think-card' },
+        h('div', { class: 'think-h' }, h('span', { html: icon('spark', 13) }), ' 思考 · 计划调用 ', String((proj.think.skills || []).length), ' 个技能'),
+        proj.think.summary ? h('div', { class: 'think-sum' }, proj.think.summary) : null,
+        h('div', { class: 'think-skills' }, ...(proj.think.skills || []).map(k => h('span', { class: 'think-skill' }, skillLabel(k)))),
+        proj.think.reason ? h('div', { class: 'think-reason' }, proj.think.reason) : null));
+    }
     if (!proj.req) return content.append(h('div', { class: 'empty' }, '还没有方案，点下面的「开始执行」'));
     const box = h('div', { class: 'req-card' });
     for (const [k, label] of [['title', '标题'], ['logline', '梗概'], ['duration', '总时长'], ['ratio', '画幅'], ['style', '视觉风格'], ['tone', '情绪基调'], ['audience', '目标观众']]) {

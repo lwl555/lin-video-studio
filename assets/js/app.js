@@ -3,7 +3,7 @@ import { store, auth, ADMIN } from './store.js';
 import { $, $$, toast, h } from './ui.js';
 import { icon } from './icons.js';
 import { usageReport } from './storage.js';
-import * as Home from './views/home.js?v=20261110c';
+import * as Home from './views/home.js?v=20261110d';
 import * as Canvas from './views/canvas.js';
 import * as ImageWs from './views/image.js';
 import * as VideoWs from './views/video.js';

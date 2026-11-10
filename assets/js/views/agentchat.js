@@ -8,6 +8,7 @@ import { icon } from '../icons.js';
 import { store, uid } from '../store.js';
 import { go } from '../app.js';
 import { Agent, STEPS, DONE, newProject } from '../agent.js';
+import { skillLabel } from '../skills.js';
 
 const STATUS_TXT = {
   idle: '待开始', running: '执行中', waiting: '等你确认', paused: '已暂停', done: '已完成', error: '失败',
@@ -76,6 +77,10 @@ export function render(root, params = {}) {
   function announce() {
     const a = agent.st;
     const key = a.status + '@' + a.cursor + '@' + (a.pending || '');
+    /* 先思考：把理解和选中的技能说清楚，再往下执行 */
+    if (proj.think) {
+      say(`我先想了一下：${proj.think.summary || '按你的要求来做'}。这次调用 ${(proj.think.skills || []).map(skillLabel).join('、')}${proj.think.reason ? '——' + proj.think.reason : ''}`, 'think@' + proj.think.at);
+    }
     if (a.status === 'waiting') {
       if (a.pending === 'assemble') return say('镜头都出好了，去合成成片吧。', key);
       if (a.pending === 'outline') return say('方案和角色 / 场景拆好了，你看一眼，确认后我出定妆图。', key);
@@ -252,6 +257,7 @@ export function render(root, params = {}) {
 
   function productBlocks(a) {
     const out = [];
+    if (proj.think) out.push(thinkBlock(proj.think));
     if (proj.film) {
       const v = h('video', { src: proj.film, controls: '', playsinline: '', preload: 'metadata', class: 'ac-film' });
       out.push(v);
@@ -312,7 +318,7 @@ export function render(root, params = {}) {
       }
     } else if (a.status === 'done') {
       bar.append(btn('再做一个', 'btn-primary sm', () => go('agent', {})),
-        btn('回到分镜重做', 'btn-ghost sm', () => { agent.rewind(3); agent.run(); }));
+        btn('回到分镜重做', 'btn-ghost sm', () => { agent.rewind(STEPS.findIndex(s => s.key === 'storyboard')); agent.run(); }));
     } else if (a.status === 'error') {
       bar.append(h('span', { class: 'ac-err' }, a.error || '执行失败'),
         btn('重试', 'btn-primary sm', () => agent.run()),
@@ -343,4 +349,14 @@ export function render(root, params = {}) {
     } }, '应用');
     return h('div', { class: 'ac-nudge' }, h('span', { class: 'ac-nudge-ic', html: icon('spark', 13) }), i, b);
   }
+}
+
+/* 思考卡：说明它理解了什么、这次挑哪些技能 */
+function thinkBlock(t) {
+  const skills = t.skills || [];
+  return h('div', { class: 'ac-think' },
+    h('div', { class: 'ac-think-h' }, h('span', { html: icon('spark', 13) }), ' 思考 · 计划调用 ', String(skills.length), ' 个技能'),
+    t.summary ? h('div', { class: 'ac-think-sum' }, t.summary) : null,
+    h('div', { class: 'ac-skills' }, ...skills.map(k => h('span', { class: 'ac-skill' }, skillLabel(k)))),
+    t.reason ? h('div', { class: 'ac-think-reason' }, t.reason) : null);
 }

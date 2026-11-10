@@ -843,3 +843,17 @@ a{cursor:pointer;text-decoration:none;color:inherit}
   .ac-shot-m{display:none}
   .ac-thumb{width:44px;height:28px}
 }
+
+/* 思考卡（Agent 先思考再执行） */
+.ac-think{margin:8px 0 2px;padding:10px 12px;border:1px solid #CFEDE8;border-radius:10px;background:var(--brand-soft)}
+.ac-think-h{font-size:12px;color:var(--brand-2);font-weight:600;display:flex;align-items:center;gap:5px}
+.ac-think-sum{font-size:12.5px;color:var(--txt);margin-top:6px;line-height:1.55}
+.ac-skills{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ac-skill{font-size:11.5px;padding:2px 8px;border-radius:20px;background:#fff;border:1px solid var(--line-2);color:var(--txt-2)}
+.ac-think-reason{font-size:11.5px;color:var(--txt-3);margin-top:6px}
+.think-card{background:var(--brand-soft);border:1px solid #CFEDE8;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.think-h{font-size:12.5px;font-weight:600;color:var(--brand-2);display:flex;align-items:center;gap:6px}
+.think-sum{font-size:13px;margin-top:6px;line-height:1.6}
+.think-skills{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.think-skill{font-size:11.5px;padding:2px 8px;border-radius:20px;background:#fff;border:1px solid var(--line-2);color:var(--txt-2)}
+.think-reason{font-size:11.5px;color:var(--txt-3);margin-top:6px}

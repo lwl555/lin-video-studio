@@ -11,8 +11,11 @@
    ============================================ */
 import { store, uid } from './store.js';
 import { chat, genImage, genVideo } from './models.js';
+import { SKILLS, skillCatalog, hasSkill, deliverOf } from './skills.js';
+const SKILL_KEYS = new Set(SKILLS.map(s => s.key));
 
 export const STEPS = [
+  { key: 'think',      label: '思考',       gate: false, hint: '理解需求，决定这次调用哪些技能' },
   { key: 'plan',       label: '制作方案',   gate: false, hint: '把创意整理成可执行的制作方案' },
   { key: 'outline',    label: '角色与场景', gate: true,  hint: '拆出角色、场景、道具与全局基调' },
   { key: 'assets',     label: '定妆图',     gate: false, hint: '角色 / 场景参考图，后续镜头复用' },
@@ -26,6 +29,7 @@ const VIDEO_FIELDS = ['desc', 'shot', 'camera', 'dialogue', 'dur'];
 
 /* 幂等判定：这一步的产物是不是已经有了 */
 export const DONE = {
+  think: p => !!p.think,
   plan: p => !!p.req,
   outline: p => !!p.outline,
   assets: p => {
@@ -62,6 +66,39 @@ export function routeShot(s, proj) {
 
 /* ---------------- 各阶段执行（全部幂等） ---------------- */
 const RUN = {
+  async think(proj, tick) {
+    if (DONE.think(proj)) return;
+    tick('先想一下怎么做…', 8);
+    const r = await chat(
+      `用户要做一支短视频，创意是：${proj.logline}
+
+你可以调用的技能（每行一个 key）：
+${skillCatalog()}
+
+先思考：这个需求真正要什么、该调用哪些技能、最终交什么？只输出 JSON：
+{"summary":"一句话复述你要做的片子","skills":["按执行顺序从上表挑 key"],"deliver":"video|images|storyboard","reason":"一句话说明为什么这么选"}
+规则：
+- 涉及画面时，必须含 story、storyboard；
+- 要出图才加 image，要出视频才加 video；
+- 用户只要文字或分镜时，deliver 用 storyboard，且不要加 image / video；
+- 用户只要几张图时，deliver 用 images。`,
+      { json: true, feature: 'agentText', system: '你是创作导演。先判断要哪些工序，不要急着写具体内容。' }
+    );
+    const keys = (Array.isArray(r.skills) ? r.skills : []).filter(k => SKILL_KEYS.has(k));
+    const skills = keys.length ? keys : ['story', 'storyboard', 'image', 'video'];
+    let deliver = ['video', 'images', 'storyboard'].includes(r.deliver) ? r.deliver : 'video';
+    /* 自洽校正：选了视频交付却没视频技能，就降级为出图；出图没图像技能就只交分镜 */
+    if (deliver === 'video' && !skills.includes('video')) deliver = skills.includes('image') ? 'images' : 'storyboard';
+    if (deliver === 'images' && !skills.includes('image')) deliver = 'storyboard';
+    proj.think = {
+      summary: r.summary || '',
+      skills,
+      deliver,
+      reason: r.reason || '',
+      at: Date.now(),
+    };
+  },
+
   async plan(proj, tick) {
     if (DONE.plan(proj)) return;
     tick('正在理解创意…', 20);
@@ -70,7 +107,7 @@ const RUN = {
 {"title":"标题","logline":"一句话梗概","duration":"总时长如60秒","ratio":"16:9 或 9:16","style":"视觉风格","tone":"情绪基调","audience":"目标观众"}
 
 创意：${proj.logline}`,
-      { json: true, system: '你是短剧制片人，输出必须是可以直接执行的中文方案，不要解释。' }
+      { json: true, feature: 'agentText', system: '你是短剧制片人，输出必须是可以直接执行的中文方案，不要解释。' }
     );
     proj.req = {
       title: r.title || '未命名', logline: r.logline || proj.logline,
@@ -91,7 +128,7 @@ const RUN = {
 
 方案：${JSON.stringify(proj.req)}
 创意：${proj.logline}`,
-      { json: true }
+      { json: true, feature: 'agentText' }
     );
     proj.outline = {
       synopsis: r.synopsis || '',
@@ -102,6 +139,7 @@ const RUN = {
   },
 
   async assets(proj, tick) {
+    if (!hasSkill(proj, 'image')) return;
     const list = [...(proj.outline?.characters || []), ...(proj.outline?.scenes || [])];
     let i = 0;
     for (const c of list) {
@@ -113,7 +151,7 @@ const RUN = {
         ? `角色设定图：${c.name}，${c.age || ''}，${c.look || ''}，${c.persona || ''}，三视图，白底，清晰正面全身`
         : `场景设定图：${c.name}，${c.env || ''}，${c.light || ''}，电影感，无人物`;
       try {
-        const r = await genImage(prompt, { size: '1024x1024' });
+        const r = await genImage(prompt, { size: '1024x1024', feature: 'agentImage' });
         c.image = r.url;
         store.add('assets', {
           id: uid('a'), name: c.name, type: isChar ? 'character' : 'scene',
@@ -137,7 +175,7 @@ const RUN = {
 
 方案：${JSON.stringify(proj.req)}
 大纲：${JSON.stringify({ synopsis: proj.outline?.synopsis, characters: proj.outline?.characters?.map(c => c.name), scenes: proj.outline?.scenes?.map(c => c.name) })}`,
-      { json: true }
+      { json: true, feature: 'agentText' }
     );
     const shots = Array.isArray(r) ? r : (r.shots || []);
     proj.storyboard = shots.map((s, i) => {
@@ -151,6 +189,7 @@ const RUN = {
   },
 
   async frames(proj, tick) {
+    if (!hasSkill(proj, 'image')) return;
     const list = proj.storyboard || [];
     let i = 0;
     for (const s of list) {
@@ -162,6 +201,7 @@ const RUN = {
         const r = await genImage(`${s.desc}，${s.shot}，${style}电影感画面`, {
           size: proj.req?.ratio === '9:16' ? '720x1280' : '1280x720',
           images: (s.refs || []).slice(0, 1),
+          feature: 'agentImage',
         });
         s.frame = r.url; s.status = '';
       } catch (e) { s.status = '帧失败：' + e.message; }
@@ -170,6 +210,7 @@ const RUN = {
   },
 
   async video(proj, tick) {
+    if (!hasSkill(proj, 'video')) return;
     const list = proj.storyboard || [];
     let i = 0;
     for (const s of list) {
@@ -178,9 +219,10 @@ const RUN = {
       tick(`生成片段 ${i}/${list.length} · 镜头 ${s.n}`, Math.round((i / Math.max(1, list.length)) * 90));
       try {
         const r = await genVideo(`${s.desc}，${s.camera || ''}`, {
-          images: s.videoMode === 'text' ? [] : (s.frame ? [s.frame] : []),
+          images: s.videoMode === 'text' ? [] : [...(s.frame ? [s.frame] : []), ...(s.refs || [])],
           duration: s.dur || 5,
           ratio: proj.req?.ratio || '16:9',
+          feature: 'agentVideo',
         });
         s.video = r.url; s.status = '';
         store.add('works', { id: uid('w'), title: `${proj.req?.title || '短片'} · 镜头${s.n}`, type: 'video', url: r.url, createdAt: Date.now() });
@@ -294,6 +336,16 @@ export class Agent {
         }
 
         this.st.cursor++;
+
+        /* 交付形态决定在哪收尾：只要分镜 / 只要图，就不必再跑后面的视频与合成 */
+        const dl = deliverOf(this.proj);
+        if ((def.key === 'storyboard' && dl === 'storyboard') || (def.key === 'frames' && dl === 'images')) {
+          this.st.status = 'done';
+          this.st.pending = null;
+          this.save();
+          return;
+        }
+
         this.save();
       }
       this.st.status = 'done';
@@ -355,7 +407,7 @@ export class Agent {
 只输出 JSON：{"ops":[{"n":镜头号,"patch":{"字段":"新值"}}],"note":"一句话说明改了什么"}
 可改字段：${VIDEO_FIELDS.join(' / ')}。只输出真正需要改的镜头，没提到的镜头不要出现在 ops 里。
 如果用户要求增加/删除镜头，用 {"ops":[],"note":"说明了原因"} 并保持原样。`,
-      { json: true, system: '你是剪辑导演，只做用户明确要求的局部修改，不要顺手改别的镜头。' }
+      { json: true, feature: 'agentText', system: '你是剪辑导演，只做用户明确要求的局部修改，不要顺手改别的镜头。' }
     );
     const ops = Array.isArray(r.ops) ? r.ops : [];
     const changed = [];

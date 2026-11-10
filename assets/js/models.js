@@ -44,6 +44,41 @@ export const providers = {
   get(id) { return store.find('providers', id); }
 };
 
+/* ---------- 功能 → 模型 路由（设置页可配置，随时切换） ---------- */
+export const FEATURES = [
+  { key: 'image',      label: '图片生成',        type: 'image', hint: '图片工作台' },
+  { key: 'video',      label: '视频生成',        type: 'video', hint: '视频工作台' },
+  { key: 'agentText',  label: '剧情 / Agent · 文本', type: 'text',  hint: '方案、角色场景、分镜、自然语言调整' },
+  { key: 'agentImage', label: '剧情 / Agent · 图像', type: 'image', hint: '定妆图、关键帧' },
+  { key: 'agentVideo', label: '剧情 / Agent · 视频', type: 'video', hint: '镜头视频' },
+];
+
+/* 取某功能配置的模型；没配或配的模型被删了 → 返回 null，走平台默认 */
+export function featureProvider(feature) {
+  if (!feature) return null;
+  const id = (store.state.modelRoute || {})[feature];
+  if (!id || id === '__default') return null;
+  const p = store.find('providers', id);
+  return p && p.enabled !== false ? p : null;
+}
+
+/* ---------- 失败自动重试 ---------- */
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+function autoRetryOn() { return (store.state.settings || {}).autoRetry !== false; }
+
+async function withRetry(fn, { tries = 3, base = 800 } = {}) {
+  const n = autoRetryOn() ? Math.max(1, tries) : 1;
+  let last;
+  for (let i = 0; i < n; i++) {
+    try { return await fn(i); }
+    catch (e) {
+      last = e;
+      if (i < n - 1) await sleepMs(base * (i + 1));
+    }
+  }
+  throw last;
+}
+
 /* ---------- 后端通道：平台预配置，用户完全不可见 ---------- */
 import { BACKEND, backendProvider } from './backend.js';
 const DEFAULT_TIMEOUT = 60000;
@@ -113,8 +148,8 @@ function authHeaders(key) {
 }
 
 /* ---------- 文本 ---------- */
-export async function chat(prompt, { provider, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
-  const p = resolveConn(provider, 'text');
+export async function chat(prompt, { provider, feature, system = '', json = false, temperature = 0.8, images = [], timeout } = {}) {
+  const p = resolveConn(provider || featureProvider(feature), 'text');
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : prompt;
@@ -125,7 +160,9 @@ export async function chat(prompt, { provider, system = '', json = false, temper
     stream: false
   };
   if (json) body.response_format = { type: 'json_object' };
-  const res = await request('/chat/completions', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout });
+  const res = await withRetry(
+    () => request('/chat/completions', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout }),
+    { tries: 3 });
   const b = res.body || {};
   const text = b?.choices?.[0]?.message?.content
     ?? b?.choices?.[0]?.text
@@ -141,11 +178,13 @@ export async function chat(prompt, { provider, system = '', json = false, temper
 }
 
 /* ---------- 图像 ---------- */
-export async function genImage(prompt, { provider, size = '1024x1024', n = 1, images = [] } = {}) {
-  const p = resolveConn(provider, 'image');
+export async function genImage(prompt, { provider, feature, size = '1024x1024', n = 1, images = [] } = {}) {
+  const p = resolveConn(provider || featureProvider(feature), 'image');
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
-  const res = await request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 });
+  const res = await withRetry(
+    () => request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 }),
+    { tries: 2, base: 1200 });
   const b = res.body || {};
   let url = b?.data?.[0]?.url || b?.data?.[0]?.image_url || b?.output?.url || b?.url;
   if (!url && b?.data?.[0]?.b64_json) url = 'data:image/png;base64,' + b.data[0].b64_json;
@@ -155,8 +194,8 @@ export async function genImage(prompt, { provider, size = '1024x1024', n = 1, im
 }
 
 /* ---------- 视频（Agnes 异步任务：POST /v1/videos → GET /agnesapi?video_id=） ---------- */
-export async function genVideo(prompt, { provider, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
-  const p = resolveConn(provider, 'video');
+export async function genVideo(prompt, { provider, feature, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
+  const p = resolveConn(provider || featureProvider(feature), 'video');
   const base = p.baseUrl;                                          // 例如 https://api.agnes-ai.cn/v1
   /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1）；
      其它家（用户自带）走通用的 /video/generations + /video/status */

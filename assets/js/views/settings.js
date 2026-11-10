@@ -2,7 +2,7 @@
 import { h, $, toast, modal, confirm, download, imgErr } from '../ui.js';
 import { icon } from '../icons.js';
 import { store, auth, uid, ADMIN } from '../store.js';
-import { testBackend, providers, PRESETS, TYPE_LABEL } from '../models.js';
+import { testBackend, providers, PRESETS, TYPE_LABEL, FEATURES } from '../models.js';
 import { usageReport, clearOldest, clearKind, clearAllMedia, compressAllImages, fmtMB, fmtKB } from '../storage.js';
 
 export function render(root) {
@@ -60,6 +60,61 @@ export function render(root) {
 
   page.append(h('div', { class: 'section-title' }, 'AI 后台服务'), backendCard);
   drawStatus();
+
+  /* ---- 功能模型：每个功能用哪个模型，随时切换 ---- */
+  page.append(h('div', { class: 'section-title' }, '功能模型'), routeCard());
+
+  function routeCard() {
+    const card = h('div', { class: 'provider-card' });
+    function draw() {
+      card.innerHTML = '';
+      card.append(h('div', { class: 'hint', style: { marginTop: '0' } },
+        '给每个功能指定用哪个模型。选「平台默认」就走平台通道；添加了自己的模型后，这里会多出可选项，随时切换、下一次生成立即生效。'));
+
+      for (const f of FEATURES) {
+        const opts = providers.byType(f.type).filter(p => p.id !== '__backend');
+        const cur = (store.state.modelRoute || {})[f.key] || '__default';
+        const sel = h('select', { class: 'form-select route-sel', 'data-feature': f.key, style: { maxWidth: '300px' } });
+        sel.append(h('option', { value: '__default', selected: cur === '__default' }, '平台默认'));
+        for (const p of opts) {
+          sel.append(h('option', { value: p.id, selected: p.id === cur }, `${p.name} · ${p.model}`));
+        }
+        sel.addEventListener('change', e => {
+          const v = e.target.value;
+          const next = { ...(store.state.modelRoute || {}) };
+          if (v === '__default') delete next[f.key]; else next[f.key] = v;
+          store.set({ modelRoute: next });
+          toast(v === '__default' ? `「${f.label}」已用平台默认` : `「${f.label}」已切换`, 'ok');
+        });
+        card.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderTop: '1px solid var(--line)' } },
+          h('div', { style: { minWidth: '190px' } },
+            h('div', { style: { fontSize: '13px', fontWeight: '600' } }, f.label),
+            h('div', { class: 'hint', style: { margin: '2px 0 0' } }, f.hint)),
+          sel,
+          h('div', { class: 'hint', style: { margin: '0', flex: '1' } },
+            opts.length ? '' : '暂无同类自有模型，下方可添加')));
+      }
+
+      /* 失败自动重试 */
+      const auto = (store.state.settings || {}).autoRetry !== false;
+      const arInput = h('input', { type: 'checkbox', checked: auto });
+      arInput.addEventListener('change', e => {
+        const cur = store.state.settings || {};
+        store.set({ settings: { ...cur, autoRetry: e.target.checked } });
+        toast(e.target.checked ? '已开启：失败会自动重试' : '已关闭自动重试', 'ok');
+      });
+      card.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', borderTop: '1px solid var(--line)', paddingTop: '14px', marginTop: '4px' } },
+        h('div', { style: { flex: '1' } },
+          h('div', { style: { fontSize: '13px', fontWeight: '600' } }, '失败自动重试'),
+          h('div', { class: 'hint', style: { margin: '2px 0 0' } }, '模型偶发超时 / 限流时自动再试；仍失败会在生成区显示「重试」按钮，可一直重试。')),
+        h('label', { class: 'switch' }, arInput, h('span', { class: 'slider' }))));
+
+      card.append(h('div', { style: { display: 'flex', gap: '10px', marginTop: '14px' } },
+        h('button', { class: 'btn-ghost', onclick: () => { store.set({ modelRoute: {} }); draw(); toast('已全部恢复平台默认', 'ok'); } }, '全部恢复平台默认')));
+    }
+    draw();
+    return card;
+  }
 
   /* ---- 我的模型（可选 · 自带 Key） ---- */
   const mineWrap = h('div', {});
