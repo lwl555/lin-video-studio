@@ -54,7 +54,7 @@ export function renderList(root) {
           h('div', { class: 'flow-title' }, p.name),
           h('div', { class: 'flow-meta' }, '更新于 ' + timeAgo(p.updatedAt || p.createdAt))));
     }))
-    : h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('canvas', 40) }), '还没有画布项目，点右上角新建一个');
+    : h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('canvas', 40) }), '还没有画布项目，点「新建画布项目」开始');
 
   root.append(h('div', { class: 'page' },
     h('div', { class: 'page-head-row' },

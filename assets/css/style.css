@@ -290,6 +290,7 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .flow-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-m);border-color:var(--line-2)}
 .flow-thumb{aspect-ratio:16/9;background:var(--bg);position:relative;overflow:hidden}
 .flow-thumb img{width:100%;height:100%;object-fit:cover}
+.flow-thumb video{width:100%;height:100%;object-fit:cover;display:block}
 .flow-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;opacity:.3}
 .flow-ph svg{width:36px;height:36px}
 .flow-badge{position:absolute;top:8px;left:8px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.62);
@@ -297,6 +298,8 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .flow-body{padding:10px 12px}
 .flow-title{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow-meta{font-size:11.5px;color:var(--txt-3);margin-top:3px}
+/* 卡片底部按钮行：窄卡片上自动换行，不会把中文挤成一字一行 */
+.card-acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 
 /* ---------- 无限画布 ---------- */
 .canvas-wrap{position:absolute;inset:0;overflow:hidden;background:var(--bg-canvas)}
@@ -330,6 +333,7 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .node-textarea:focus{border-color:var(--brand)}
 .node-actions{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line);flex-wrap:wrap}
 .node-btn{padding:5px 10px;border-radius:8px;background:#fff;border:1px solid var(--line-2);
+  white-space:nowrap;
   font-size:11.5px;color:var(--txt-2);display:flex;align-items:center;gap:5px;transition:.15s}
 .node-btn:hover{border-color:var(--brand);color:var(--brand-2)}
 .node-btn.primary{background:var(--ink);color:#fff;border:none}

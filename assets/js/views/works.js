@@ -44,7 +44,7 @@ export function render(root, params = {}) {
         h('div', { class: 'flow-body' },
           h('div', { class: 'flow-title' }, w.title || '未命名'),
           h('div', { class: 'flow-meta' }, timeAgo(w.createdAt)),
-          h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
+          h('div', { class: 'card-acts' },
             h('button', { class: 'node-btn', onclick: () => download(w.url, (w.title || 'work') + (w.type === 'video' ? '.mp4' : '.png')) }, '下载'),
             h('button', { class: 'node-btn', onclick: () => navigator.clipboard?.writeText(w.url).then(() => toast('链接已复制', 'ok')) }, '复制链接'),
             h('button', { class: 'node-btn', onclick: async () => { if (await confirm('删除这个作品？')) { store.remove('works', w.id); drawFilters(); drawGrid(); } } }, '删除')))));

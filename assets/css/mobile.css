@@ -35,12 +35,18 @@
   /* ---------- 顶栏 ---------- */
   .topbar{height:52px;padding:0 9px;gap:6px}
   .topbar-left{flex:1;min-width:0;gap:4px}
-  .search-box{width:auto;flex:1;max-width:none;padding:6px 11px;border-radius:18px}
+  .search-box{width:auto;flex:1 1 0;min-width:0;max-width:none;padding:6px 11px;border-radius:18px}
   .search-box input{min-width:0}
   .credit-pill{padding:4px 9px;font-size:11.5px;gap:5px}
   .credit-pill .credit-sep,.credit-pill>span:nth-child(2){display:none}
   /* 顶栏放不下太多东西：收起「已接入 BYOK」胶囊，保留通知与今日额度 */
   .credit-pill{display:none}
+  /* 触控区：手指点的东西不能只有 20px 宽 */
+  .topbar .icon-btn,.topbar #btn-menu,.topbar #btn-back{width:38px;height:38px;border-radius:11px;flex:0 0 auto}
+  #btn-logout{width:38px;height:38px;padding:0;border-radius:11px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center}
+  .topbar-right{gap:2px}
+  .section-title .flow-link{padding:6px 2px}
 
   /* ---------- 页面骨架 ---------- */
   .page{padding:15px 13px calc(26px + env(safe-area-inset-bottom))}
@@ -69,6 +75,9 @@
   .entry-tile{padding:12px}
   .entry-desc{font-size:11px;line-height:1.5}
   .home-flow{margin-top:26px}
+  /* 首帧/尾帧/参考图：手机上三个挤一行，别掉成 2+1 留个空位 */
+  .composer .ref-row{flex-wrap:nowrap;gap:8px}
+  .composer .ref-slot{flex:1 1 0;width:auto;min-width:0;height:auto;aspect-ratio:1}
   .cat-row,.chip-row{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
   .cat-row::-webkit-scrollbar,.chip-row::-webkit-scrollbar{display:none}
   .chip,.cat-chip{flex:none;white-space:nowrap}
@@ -76,6 +85,14 @@
   .flow-title{font-size:12.5px}
   .flow-meta{font-size:11px}
   .asset-cards{grid-template-columns:repeat(2,1fr);gap:10px}
+  /* 手机上的操作按钮统一加高，拇指点得准 */
+  .node-btn{min-height:34px;padding:7px 12px;font-size:12px}
+  .card-acts{gap:8px;margin-top:10px}
+  .zoom-label{min-height:34px;min-width:52px;display:flex;align-items:center;justify-content:center}
+  .mode-btn{min-height:34px;padding:7px 16px;font-size:13px}
+  .try-chip{min-height:36px;padding:8px 10px;font-size:12.5px}
+  .notice-close{width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+    font-size:19px;margin:-6px -6px -6px 0}
 
   /* 所有可输入控件 16px 起：防 iOS 聚焦放大 */
   input,textarea,select{font-size:16px}
@@ -226,4 +243,52 @@
   .canvas-toolbar .tb-add{padding:6px 9px;font-size:12px}
   .ac-shot{grid-template-columns:16px 40px minmax(0,1fr);gap:8px}
   .ac-thumb{width:40px;height:26px}
+}
+
+/* 小屏（iPhone SE / 320~420）：卡片一行一个，按钮才放得下 */
+@media (max-width:420px){
+  .flow-grid,.asset-cards{grid-template-columns:1fr}
+  .flow-thumb{aspect-ratio:16/10}
+  .card-acts{gap:8px}
+  .card-acts .node-btn{flex:1 1 auto;justify-content:center}
+  .modal{width:calc(100% - 28px)}
+}
+
+/* 登录 / 注册页：文字链也要点得着 */
+@media (max-width:900px){
+  .f-eye{width:40px;height:40px;right:-6px;bottom:0;display:flex;align-items:center;justify-content:center}
+  .f-link,.f-alt a,.link-btn{padding:7px 2px;display:inline-block}
+  .f-check{padding:6px 0}
+}
+
+/* ---------- 横屏手机（宽 > 高）：恢复左右两栏，表单不用滚半天才看到生成键 ---------- */
+@media (max-width:900px) and (orientation:landscape){
+  .ws{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr);height:100%;overflow:hidden}
+  .ws-panel{overflow-y:auto;border-right:1px solid var(--line);border-bottom:none;
+    padding:12px 13px calc(14px + env(safe-area-inset-bottom))}
+  .ws-stage{padding:12px 14px;overflow-y:auto;justify-content:flex-start}
+  .stage-box{width:100%;border-radius:12px}
+  .style-tiles{grid-template-columns:repeat(2,1fr);gap:7px}
+  .result-strip{justify-content:flex-start;width:100%}
+  .page{padding:12px 16px calc(16px + env(safe-area-inset-bottom))}
+  .home{padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  .home-title{font-size:20px}
+  .adm-stats{grid-template-columns:repeat(4,1fr)}
+  .steps{margin:0 0 12px}
+}
+
+/* ---------- 刘海屏安全区：横放时刘海在左右，别让内容被吃掉 ---------- */
+@supports (padding: max(0px)){
+  @media (max-width:900px){
+    .topbar{padding-left:max(9px, env(safe-area-inset-left));
+      padding-right:max(9px, env(safe-area-inset-right))}
+    .page{padding-left:max(13px, env(safe-area-inset-left));
+      padding-right:max(13px, env(safe-area-inset-right))}
+    .home{padding-left:max(13px, env(safe-area-inset-left));
+      padding-right:max(13px, env(safe-area-inset-right))}
+    .sidebar{padding-left:env(safe-area-inset-left)}
+    .ws-panel{padding-left:max(13px, env(safe-area-inset-left))}
+    .ws-stage{padding-right:max(14px, env(safe-area-inset-right))}
+  }
 }

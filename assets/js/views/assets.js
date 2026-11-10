@@ -42,7 +42,7 @@ export function render(root) {
             h('span', { class: 'badge' }, TYPES[a.type] || '素材'),
             h('span', { class: 'tag' }, timeAgo(a.createdAt))),
           h('div', { class: 'asset-desc' }, a.desc || '—'),
-          h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
+          h('div', { class: 'card-acts' },
             h('button', { class: 'node-btn', onclick: () => navigator.clipboard?.writeText(a.desc || a.name).then(() => toast('描述已复制', 'ok')) }, '复制描述'),
             h('button', { class: 'node-btn', onclick: () => download(a.url, a.name + '.png') }, '下载'),
             h('button', { class: 'node-btn', onclick: async () => { if (await confirm(`删除资产「${a.name}」？`)) { store.remove('assets', a.id); drawFilters(); drawGrid(); } } }, '删除')))));
