@@ -324,6 +324,7 @@ ${WRITING_RULES}
   async video(proj, tick) {
     if (!hasSkill(proj, 'video')) return;
     const list = proj.storyboard || [];
+    const doneCount = () => list.filter(x => x.video).length;
     let i = 0;
     for (const s of list) {
       i++;
@@ -340,6 +341,11 @@ ${WRITING_RULES}
         store.add('works', { id: uid('w'), title: `${proj.req?.title || '短片'} · 镜头${s.n}`, type: 'video', url: r.url, createdAt: Date.now() });
       } catch (e) {
         s.status = '片段失败：' + e.message;
+        /* 队列满不逐个硬等：8 个镜头各等 3 分钟等于半小时。停下来，已完成的不重做 */
+        if (e && e.queueFull) {
+          throw new Error(`视频队列已满（Agnes 免费档），已出 ${doneCount()}/${list.length} 个片段。` +
+            `过几分钟点下面「重跑这一步」会接着做，已有片段的镜头不会重来。`);
+        }
       }
     }
     if (list.length && list.every(s => !s.video)) throw new Error('镜头视频全部生成失败');

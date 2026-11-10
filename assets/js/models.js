@@ -338,8 +338,9 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
 
   onProgress?.('提交视频任务…');
   /* 视频通道免费档很挤：排队/限流时服务端返回「无 CORS 头的 429」，浏览器只会给一个
-     TypeError。所以这里按网络错误与 429/503 退避重试，别让用户以为是自己网络断了。 */
-  const waits = [0, 8000, 20000, 40000];
+     TypeError；队列满则返回 503 video_queue_full。两者都重试，但只等 10s / 25s 两轮——
+     队列真满时硬等半小时还不如停下来，让 agent 保留已出片段下次接着做。 */
+  const waits = [0, 10000, 25000];
   let lastErr = null;
   let res = null;
   for (let attempt = 0; attempt < waits.length; attempt++) {
@@ -356,13 +357,17 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
       lastErr = e;
       const retryable = e && (e.network === true || /HTTP (429|503)/.test(String(e.message)));
       if (!retryable) throw e;
-      if (attempt === waits.length - 1) {
-        throw new Error('视频通道一直在排队或限流（免费档常见，不是你的网络问题）。' +
-          '过 1-2 分钟再试，或把视频模型换成别的通道；文字和图片不受影响。');
-      }
     }
   }
-  if (!res && lastErr) throw lastErr;
+  if (!res) {
+    const m = String((lastErr && lastErr.message) || '');
+    if (/503|video_queue_full/i.test(m)) {
+      const err = new Error('视频队列已满（免费档排队），这次先不做，过几分钟再来');
+      err.queueFull = true;                 /* 上层据此停下整步，而不是逐个镜头硬等 */
+      throw err;
+    }
+    throw new Error('视频通道限流中（免费档常见，不是你的网络问题），过 1-2 分钟再试；文字和图片不受影响。');
+  }
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
   if (direct) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); chargeModelQuota(p, vidCost); return { url: direct, raw: b }; }
