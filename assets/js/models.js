@@ -151,7 +151,7 @@ function resolveConn(sel, type) {
   };
 }
 
-async function request(path, { base, own = false, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT } = {}) {
+async function request(path, { base, own = false, method = 'POST', headers = {}, body, timeout = DEFAULT_TIMEOUT, __alt = false } = {}) {
   if (!backendOn()) throw new Error('AI 后台未启用，请到「设置 → AI 后台服务」开启');
   /* 走服务端代理时，前端只把请求发到代理地址，密钥由代理侧注入，前端零暴露 */
   const _base = String(base || BACKEND.proxyUrl || BACKEND.agnes.baseUrl).replace(/\/$/, '');
@@ -184,7 +184,20 @@ async function request(path, { base, own = false, method = 'POST', headers = {},
     return { status: r.status, body: j };
   } catch (e) {
     if (e?.name === 'AbortError') throw new Error(`请求超时（${secs} 秒无响应）`);
-    if (e instanceof TypeError) throw new Error(`连不上模型服务（${e.message || '网络错误'}）`);
+    if (e instanceof TypeError) {
+      /* 网络层失败：先换备用域名再试一次（Agnes 同 key 双通道，手机 DNS 解析不了 .cn 时能救回来） */
+      const altBase = !__alt && /api\.agnes-ai\.cn/.test(String(base || ''))
+        ? String(base).replace('api.agnes-ai.cn', 'apihub.agnes-ai.com')
+        : '';
+      if (altBase) {
+        try {
+          return await request(path, { base: altBase, own, method, headers, body, timeout, __alt: true });
+        } catch (e2) { /* 备用也失败，落到下面统一报错 */ }
+      }
+      throw new Error(`连不上模型服务（网络层失败）：可能 ①手机网络/DNS 解析不了 api.agnes-ai.cn（已自动试过备用域名 apihub.agnes-ai.com）；` +
+        `②公司或运营商拦截；③浏览器插件（广告拦截）拦了；④代理/VPN 未生效。` +
+        `可到「设置 → AI 后台 → 测试连接」自查。`);
+    }
     throw e;
   } finally {
     clearTimeout(timer);
@@ -244,8 +257,11 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
   assertModelQuota(p);                        /* 该模型的每人每天额度 */
   const body = { model: p.model, prompt, n, size };
   const refs = (images || []).filter(Boolean).slice(0, 3);
-  if (refs.length) body.image = refs[0];          /* 主参考图：多数模型只认这一张 */
-  if (refs.length > 1) body.images = refs;        /* 多参考：支持的服务会一起看，不支持的会报错→下面回退 */
+  if (refs.length) body.image = refs[0];          /* 主参考图：所有图生图模型都认 */
+  /* 多参考字段默认不发：实测 Agnes 文生图队列会直接 400（"images 不是文生图队列支持的字段"）。
+     换成支持 images 数组的服务后，把 settings.multiRefImages 设为 true 即可开启 */
+  const multiRef = (store.state.settings || {}).multiRefImages === true;
+  if (refs.length > 1 && multiRef) body.images = refs;
 
   let res;
   try {
@@ -253,8 +269,8 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
       () => request('/images/generations', { base: p.baseUrl, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 180000 }),
       { tries: 2, base: 1200 });
   } catch (e) {
-    /* 多图字段被拒（HTTP 4xx）时，退回只发主参考图再试一次，不让能力探测拖垮出图 */
-    if (refs.length > 1 && /^HTTP 4\d\d/.test(String(e && e.message))) {
+    /* 多图字段一旦被拒（4xx）或直接把连接打崩（TypeError），退回只发主参考图再试一次 */
+    if (body.images) {
       const b2 = { ...body };
       delete b2.images;
       res = await withRetry(
