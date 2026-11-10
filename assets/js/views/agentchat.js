@@ -459,12 +459,43 @@ export function render(root, params = {}) {
       if (proj.req.logline) out.push(h('div', { class: 'ac-logline' }, proj.req.logline));
     }
     if (proj.outline) {
+      /* 剧情放最前：先把故事讲清楚，再看角色图，否则会像「图先出来了、剧情没有」 */
+      if (proj.outline.synopsis) {
+        out.push(h('div', { class: 'ac-sect' }, '剧情梗概'));
+        out.push(h('div', { class: 'ac-logline' }, proj.outline.synopsis));
+      }
       const list = [...(proj.outline.characters || []), ...(proj.outline.scenes || [])];
-      out.push(h('div', { class: 'ac-assets' }, ...list.map(c =>
-        h('div', { class: 'ac-asset' },
-          c.image ? h('img', { src: c.image, class: 'ac-asset-img' }) : h('div', { class: 'ac-asset-ph', html: icon('image', 16) }),
-          h('div', { class: 'ac-asset-name' }, c.name)))));
-      if (proj.outline.synopsis) out.push(h('div', { class: 'ac-logline' }, proj.outline.synopsis));
+      if (list.length) {
+        out.push(h('div', { class: 'ac-sect' }, '角色与场景设定'));
+        out.push(h('div', { class: 'ac-assets' }, ...list.map(c => {
+          const cell = h('div', { class: 'ac-asset' });
+          /* 主图 = 三视图 / 全景；细节图叠在右下角小角标，保证每格高度一致、名字对齐 */
+          const fig = h('div', { style: { position: 'relative', width: '86px', height: '86px' } });
+          fig.append(c.image
+            ? h('img', { src: c.image, class: 'ac-asset-img', style: { width: '86px', height: '86px' } })
+            : h('div', { class: 'ac-asset-ph', html: icon('image', 16) }));
+          if (c.detail) {
+            fig.append(h('img', {
+              src: c.detail,
+              title: '细节图',
+              style: {
+                position: 'absolute', right: '-4px', bottom: '-4px', width: '38px', height: '38px',
+                objectFit: 'cover', borderRadius: '7px', border: '2px solid #fff',
+                boxShadow: '0 1px 4px rgba(0,0,0,.18)', background: '#fff'
+              }
+            }));
+          }
+          cell.append(fig);
+          cell.append(h('div', { class: 'ac-asset-name' }, c.name));
+          const meta = c.look || c.env || '';
+          if (meta) {
+            cell.append(h('div', {
+              style: { fontSize: '11px', color: 'var(--txt-3)', lineHeight: '1.35', marginTop: '2px' }
+            }, meta.slice(0, 46)));
+          }
+          return cell;
+        })));
+      }
     }
     if ((proj.storyboard || []).length) {
       const rows = h('div', { class: 'ac-shots' });

@@ -12,7 +12,7 @@
 import { store, uid } from './store.js';
 import { chat, genImage, genVideo } from './models.js';
 import { SKILLS, skillCatalog, hasSkill, deliverOf } from './skills.js';
-import { charPrompt, scenePrompt, imagePrompt, videoPrompt } from './prompts.js';
+import { charPrompt, charDetailPrompt, scenePrompt, sceneDetailPrompt, imagePrompt, videoPrompt } from './prompts.js';
 const SKILL_KEYS = new Set(SKILLS.map(s => s.key));
 
 export const STEPS = [
@@ -168,24 +168,52 @@ ${WRITING_RULES}
   async assets(proj, tick) {
     if (!hasSkill(proj, 'image')) return;
     const list = [...(proj.outline?.characters || []), ...(proj.outline?.scenes || [])];
+    const req = proj.req || {};
     let i = 0;
     for (const c of list) {
       i++;
-      if (c.image) continue;
-      tick(`生成定妆图 ${i}/${list.length} · ${c.name}`, Math.round((i / Math.max(1, list.length)) * 90));
       const isChar = !('env' in c);
-      const prompt = isChar ? charPrompt(c) : scenePrompt(c);
-      try {
-        const r = await genImage(prompt, { size: '1024x1024', feature: 'agentImage' });
-        c.image = r.url;
-        store.add('assets', {
-          id: uid('a'), name: c.name, type: isChar ? 'character' : 'scene',
-          desc: [c.look, c.env, c.persona, c.light].filter(Boolean).join(' · '),
-          url: r.url, createdAt: Date.now(),
-        });
-      } catch (e) {
-        /* 单张失败不阻断整条流水线：留空，后面镜头不用它即可 */
-        c.imageError = e.message;
+      const total = list.length * 2;
+      const pct = n => Math.round((n / Math.max(1, total)) * 90);
+
+      /* 第一张：角色三视图 / 场景全景 —— 后续镜头的稳定参考 */
+      if (!c.image) {
+        tick(`生成${isChar ? '角色三视图' : '场景全景'} ${i}/${list.length} · ${c.name}`, pct(i * 2 - 1));
+        try {
+          const r = await genImage(isChar ? charPrompt(c, req) : scenePrompt(c, req), {
+            size: '1024x1024', feature: 'agentImage'
+          });
+          c.image = r.url;
+          store.add('assets', {
+            id: uid('a'), name: `${c.name} · ${isChar ? '三视图' : '全景'}`,
+            type: isChar ? 'character' : 'scene',
+            desc: [c.look, c.env, c.persona, c.light].filter(Boolean).join(' · '),
+            url: r.url, createdAt: Date.now(),
+          });
+        } catch (e) {
+          /* 单张失败不阻断整条流水线：留空，后面镜头不用它即可 */
+          c.imageError = e.message;
+        }
+      }
+
+      /* 第二张：细节拼版（面部/材质/配饰/道具）—— 角色才有五官可拆，场景同样出陈设细节 */
+      if (c.image && !c.detail && !c.detailError) {
+        tick(`生成${isChar ? '角色细节图' : '场景细节图'} · ${c.name}`, pct(i * 2));
+        try {
+          const r = await genImage(isChar ? charDetailPrompt(c, req) : sceneDetailPrompt(c, req), {
+            size: '1024x1024', feature: 'agentImage'
+          });
+          c.detail = r.url;
+          store.add('assets', {
+            id: uid('a'), name: `${c.name} · 细节`,
+            type: isChar ? 'character' : 'scene',
+            desc: [c.look, c.env, c.persona, c.light].filter(Boolean).join(' · '),
+            url: r.url, createdAt: Date.now(),
+          });
+        } catch (e) {
+          /* 细节图失败不影响主图与后续流程 */
+          c.detailError = e.message;
+        }
       }
     }
     if (list.length && list.every(c => !c.image)) throw new Error('定妆图全部生成失败，检查模型或额度');
