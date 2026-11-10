@@ -92,12 +92,12 @@ export function render(root) {
           }
           toast(v === '__default' ? `「${f.label}」已用平台默认` : `「${f.label}」已切换`, 'ok');
         });
-        card.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderTop: '1px solid var(--line)' } },
-          h('div', { style: { minWidth: '190px' } },
-            h('div', { style: { fontSize: '13px', fontWeight: '600' } }, f.label),
+        card.append(h('div', { class: 'route-row' },
+          h('div', { class: 'route-name' },
+            h('div', { class: 'route-label' }, f.label),
             h('div', { class: 'hint', style: { margin: '2px 0 0' } }, f.hint)),
           sel,
-          h('div', { class: 'hint', style: { margin: '0', flex: '1' } },
+          h('div', { class: 'hint route-hint' },
             opts.length ? '' : '暂无同类自有模型，下方可添加')));
       }
 

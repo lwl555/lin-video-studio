@@ -76,7 +76,7 @@ export function render(root, params = {}) {
   const modelBtn = h('button', { class: 'model-select', onclick: () => go('settings') });
   const syncModel = () => {
     const type = mode === 'image' ? 'image' : mode === 'video' ? 'video' : 'text';
-    modelBtn.innerHTML = `<span class="model-dot"></span>${modelChip(type)}
+    modelBtn.innerHTML = `<span class="model-dot"></span><span class="model-name">${modelChip(type)}</span>
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>`;
   };
   syncModel();

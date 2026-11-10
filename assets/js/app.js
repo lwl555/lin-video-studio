@@ -16,7 +16,13 @@ import * as Inspire from './views/inspire.js';
 import * as Settings from './views/settings.js';
 
 /* ---------- 认证门禁 ---------- */
+/* 防重入：万一 app.js 被当成两个模块各求值一次（历史上 script 标签带 ?v= 就踩过），
+   initAuth / bootApp 都只允许真正执行一次，否则事件会绑两遍 */
+let didInit = false, didBoot = false;
+
 function initAuth() {
+  if (didInit) return;
+  didInit = true;
   const screen = $('#auth-screen'), app = $('#app');
 
   if (auth.user) { screen.classList.add('hidden'); app.classList.remove('hidden'); bootApp(); return; }
@@ -82,9 +88,13 @@ const NAV_OF = { home: 'inspire', inspire: 'inspire', series: 'series', canvas: 
   works: 'works', assets: 'assets', settings: 'settings', image: 'image', video: 'video', studio: 'series', agent: 'series' };
 let current = 'home';
 
+/* 移动端侧栏抽屉：go() 里切页时自动收起（由 bootApp 赋值） */
+let closeDrawer = () => { };
+
 export function go(route, params = {}) {
   if (!ROUTES[route]) route = 'home';
   current = route;
+  closeDrawer();
   try { history.replaceState(null, '', '#' + route); } catch { /* ignore */ }
   const view = $('#view');
   view.innerHTML = '';
@@ -101,6 +111,8 @@ window.__go = go;
 
 /* ---------- 启动 ---------- */
 function bootApp() {
+  if (didBoot) return;
+  didBoot = true;
   const u = auth.user;
   $('#user-name').textContent = u.nick;
   $('#user-plan').textContent = u.role === 'admin' ? '管理员' : '创作者';
@@ -110,6 +122,26 @@ function bootApp() {
   $$('.nav-item').forEach(n => n.addEventListener('click', () => go(n.dataset.route)));
   $('#btn-back').addEventListener('click', () => go('home'));
   $('#btn-new').addEventListener('click', () => go('home'));
+
+  /* ---------- 移动端：侧栏改成抽屉 ---------- */
+  const sidebar = $('.sidebar');
+  const sbMask = $('#sb-mask');
+  closeDrawer = () => {
+    sidebar.classList.remove('open');
+    sbMask.classList.add('hidden');
+  };
+  $('#btn-menu')?.addEventListener('click', () => {
+    if (sidebar.classList.contains('open')) return closeDrawer();
+    sidebar.classList.add('open');
+    sbMask.classList.remove('hidden');
+  });
+  sbMask.addEventListener('click', () => closeDrawer());
+  /* 抽屉里点导航 / 开始创作 / 退出，都顺手收起 */
+  sidebar.addEventListener('click', e => {
+    if (e.target.closest('.nav-item') || e.target.closest('#btn-new')) closeDrawer();
+  });
+  /* 竖屏↔横屏切换时别留着半开的抽屉 */
+  window.addEventListener('resize', () => { if (innerWidth > 900) closeDrawer(); });
   $('#btn-logout').addEventListener('click', () => {
     if (confirm('确定退出登录？')) { auth.logout(); location.reload(); }
   });

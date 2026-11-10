@@ -1,0 +1,200 @@
+/* ================================================================
+   移动端适配（手机 / 竖屏平板）
+   - ≤900px：侧栏改抽屉、工作区上下堆叠、分镜表拆成卡片
+   - ≤560px：再收紧间距与字号
+   说明：iOS 上输入框字号 <16px 时，聚焦会整页放大，所以这里统一 16px。
+   单独成文件，方便和主样式分开维护，也避免媒体查询散落。
+   ================================================================ */
+
+/* 抽屉遮罩 */
+.sb-mask{position:fixed;inset:0;background:rgba(17,24,39,.42);z-index:390;animation:sbFade .16s ease}
+@keyframes sbFade{from{opacity:0}to{opacity:1}}
+.menu-btn{display:none}
+
+@media (max-width:900px){
+  /* ---------- 基础 ---------- */
+  .app{height:100vh}
+  @supports (height:100dvh){ .app{height:100dvh} }
+  body{overscroll-behavior:none}
+  .view{overflow:hidden}
+
+  /* ---------- 侧栏 → 抽屉 ---------- */
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:250px;z-index:400;
+    transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);
+    box-shadow:0 14px 44px rgba(16,24,40,.22);
+    padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .sidebar.open{transform:none}
+  .sidebar .logo-text,.sidebar .nav-item span,.sidebar .user-meta,
+  .sidebar .btn-new,.sidebar .nav-group-title{display:revert}
+  .sidebar .logo-text{display:block;max-width:160px}
+  .sidebar .user-meta{display:block}
+  .sidebar .btn-new{display:flex}
+  .nav-item{padding:11px 12px;font-size:14px}
+  .menu-btn{display:flex}
+
+  /* ---------- 顶栏 ---------- */
+  .topbar{height:52px;padding:0 9px;gap:6px}
+  .topbar-left{flex:1;min-width:0;gap:4px}
+  .search-box{width:auto;flex:1;max-width:none;padding:6px 11px;border-radius:18px}
+  .search-box input{min-width:0}
+  .credit-pill{padding:4px 9px;font-size:11.5px;gap:5px}
+  .credit-pill .credit-sep,.credit-pill>span:nth-child(2){display:none}
+  #btn-notice{display:none}
+
+  /* ---------- 页面骨架 ---------- */
+  .page{padding:15px 13px calc(26px + env(safe-area-inset-bottom))}
+  .page-title{font-size:19px}
+  .page-sub{font-size:12.5px;line-height:1.6}
+  .section-title{font-size:14px;margin-top:20px}
+  /* 标题行：手机上按钮换到标题下面整行，避免长副标题被按钮压住 */
+  .page-head-row{flex-direction:column;align-items:stretch;gap:11px}
+  .page-head-row>.btn-primary,.page-head-row>.btn-ghost{width:100%;justify-content:center;min-height:40px}
+  .page-head-row>div:last-child{display:flex;gap:8px}
+  .page-head-row>div:last-child>.btn-primary,
+  .page-head-row>div:last-child>.btn-ghost{flex:1;justify-content:center;min-height:40px;width:auto}
+
+  /* ---------- 首页 ---------- */
+  .home{padding:20px 13px calc(36px + env(safe-area-inset-bottom))}
+  .home-hero{margin-bottom:18px}
+  .home-title{font-size:22px;letter-spacing:-.3px}
+  .home-desc{font-size:13px;margin-top:8px}
+  .composer{padding:13px;border-radius:14px}
+  .composer-input{min-height:68px;line-height:1.6}
+  /* 底部一行：模型选择 + 字数/发送。手机上一行放得下，模型名超长就省略 */
+  .composer-bar{gap:8px;flex-wrap:nowrap}
+  .composer-bar .model-select{min-width:0;flex:1 1 auto;padding:7px 11px}
+  .composer-actions{flex:0 0 auto;margin-left:auto}
+  .entry-grid{grid-template-columns:repeat(2,1fr);gap:10px;margin-top:18px}
+  .entry-tile{padding:12px}
+  .entry-desc{font-size:11px;line-height:1.5}
+  .home-flow{margin-top:26px}
+  .cat-row,.chip-row{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+  .cat-row::-webkit-scrollbar,.chip-row::-webkit-scrollbar{display:none}
+  .chip,.cat-chip{flex:none;white-space:nowrap}
+  .flow-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .flow-title{font-size:12.5px}
+  .flow-meta{font-size:11px}
+  .asset-cards{grid-template-columns:repeat(2,1fr);gap:10px}
+
+  /* 所有可输入控件 16px 起：防 iOS 聚焦放大 */
+  input,textarea,select{font-size:16px}
+  .form-input,.form-select,.form-area,.composer-input,.ac-input,.ac-nudge-in,.shot-input{font-size:16px}
+  /* 登录 / 注册表单与顶栏搜索是基础样式里写死小字号的，单独提上来 */
+  .f-field input,.search-box input{font-size:16px}
+
+  /* ---------- 图片 / 视频工作区：上下堆叠（面板不能被藏） ---------- */
+  .ws{display:flex;flex-direction:column;height:100%;overflow-y:auto}
+  .ws-panel{display:block;flex:none;border-right:none;border-bottom:1px solid var(--line);
+    padding:14px 13px;overflow:visible;background:#fff}
+  .ws-stage{padding:14px 13px calc(20px + env(safe-area-inset-bottom));justify-content:flex-start}
+  .stage-box{width:100%;border-radius:12px}
+  .result-strip{justify-content:flex-start;gap:8px;width:100%}
+  .result-thumb{width:78px;height:50px}
+  .style-tiles{grid-template-columns:repeat(4,1fr);gap:7px}
+  .style-tile .style-name{font-size:10.5px;padding:4px}
+
+  /* ---------- 剧情短片工作台 ---------- */
+  .agent-head{flex-direction:column;align-items:flex-start;gap:8px}
+  .agent-head-tags{flex-wrap:wrap}
+  .steps{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -13px 16px;padding:0 13px 6px}
+  .steps::-webkit-scrollbar{display:none}
+  .step{flex:none;padding:6px 11px;font-size:12px}
+  .agent-bar{flex-wrap:wrap;gap:8px}
+  .agent-progress{order:9;width:100%}
+  .agent-foot{gap:8px}
+  .agent-foot .btn-primary,.agent-foot .btn-ghost{flex:1;justify-content:center;min-height:42px}
+  .gate-note{width:100%}
+  .agent-log .log-row{grid-template-columns:56px 1fr}
+  .agent-log .log-s{display:none}
+
+  /* 分镜表 → 卡片 */
+  .shot-head{display:none}
+  .shot-row.edit{grid-template-columns:22px minmax(0,1fr);gap:9px;padding:11px;margin-bottom:10px}
+  .shot-row.edit .shot-fields,.shot-row.edit .shot-model,.shot-row.edit .shot-state{grid-column:1 / -1}
+  .shot-row.edit .shot-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .shot-row.edit .shot-model,.shot-row.edit .shot-state{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px}
+  .shot-model .form-select{margin-bottom:0}
+  .nudge-box{padding:11px}
+
+  /* 需求卡 */
+  .req-card{padding:14px;max-width:none}
+  .req-row{flex-direction:column;gap:4px}
+  .req-k{width:auto;font-size:11.5px}
+  .provider-card{padding:13px}
+
+  /* ---------- Agent 对话 ---------- */
+  .ac-head{padding:11px 13px}
+  .ac-title{font-size:16px}
+  .ac-sub{font-size:11.5px;line-height:1.5}
+  .ac-log{padding:12px 11px 6px}
+  .ac-welcome{margin-top:4vh}
+  .ac-welcome h2{font-size:20px}
+  .ac-msg{max-width:100%}
+  .ac-task{border-radius:12px}
+  .ac-acts,.ac-nudge{padding:9px 11px}
+  .ac-nudge{flex-wrap:wrap}
+  .ac-nudge-in{flex:1 1 100%;order:2}
+  .ac-nudge .btn-accent{order:3;margin-left:auto}
+  .ac-compose{padding:9px 11px calc(11px + env(safe-area-inset-bottom))}
+  .ac-box{padding:6px 6px 6px 12px}
+  .ac-film{max-height:56vw}
+
+  /* ---------- 画布 ---------- */
+  .canvas-topbar{height:48px;padding:0 8px;gap:6px}
+  .canvas-topbar .btn-ghost,.canvas-topbar .btn-primary{padding:6px 10px;font-size:12px}
+  .canvas-name{gap:6px;min-width:0}
+  .canvas-name input{width:104px;font-size:13px}
+  .proj-sel{max-width:100px;font-size:12.5px}
+  .canvas-toolbar{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));
+    justify-content:flex-start;overflow-x:auto;scrollbar-width:none;padding:5px 7px;gap:5px}
+  .canvas-toolbar::-webkit-scrollbar{display:none}
+  .canvas-toolbar>*{flex:none}
+  .canvas-wrap{touch-action:none}
+  .mm-wrap{left:8px;bottom:calc(62px + env(safe-area-inset-bottom));transform:scale(.86);transform-origin:bottom left}
+  .node{width:262px}
+
+  /* ---------- 设置 / 模型接入 ---------- */
+  .form-row,.form-row-3{grid-template-columns:1fr;gap:8px}
+  .provider-head{flex-wrap:wrap}
+  .provider-name{flex:1 1 100%}
+  .backend-status{flex-wrap:wrap;font-size:12.5px}
+  .route-sel{max-width:none !important;width:100%}
+  /* 功能模型：一行摆不下「功能名 + 下拉 + 说明」，改成上下三段 */
+  .route-row{flex-wrap:wrap;gap:8px;padding:12px 0;align-items:stretch}
+  .route-name{min-width:0;flex:1 1 100%}
+  .route-row .route-sel{flex:1 1 100%;max-width:none !important;width:100%}
+  .route-hint{flex:1 1 100%;margin:0}
+  .seg{width:100%}
+
+  /* ---------- 弹层 ---------- */
+  .modal-mask{padding:12px}
+  .modal{width:calc(100vw - 24px);max-height:86dvh;border-radius:16px}
+  .modal-lg{width:calc(100vw - 24px)}
+  .modal-head{padding:13px 15px}
+  .modal-body{padding:15px}
+  .modal-foot{padding:12px 15px}
+  .context-menu{min-width:170px;font-size:13.5px}
+  .toast-root{top:auto;bottom:calc(18px + env(safe-area-inset-bottom));width:calc(100% - 24px)}
+  .toast{max-width:100%}
+
+  /* ---------- 3D 导演台 ---------- */
+  .d3-head{height:auto;flex-wrap:wrap;gap:8px;padding:10px 12px}
+  .d3-sub{flex:1 1 100%;order:3;font-size:11.5px}
+  .d3-body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto auto;overflow-y:auto}
+  .d3-side{border:none;border-top:1px solid var(--line);padding:12px;max-height:none}
+  .d3-side:first-child{border-right:none}
+  .d3-side:last-child{border-left:none}
+  .d3-stage{min-height:46vh}
+}
+
+@media (max-width:560px){
+  .entry-grid{gap:8px}
+  .entry-desc{display:none}
+  .flow-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .asset-cards{grid-template-columns:1fr 1fr;gap:8px}
+  .style-tiles{grid-template-columns:repeat(3,1fr)}
+  .mm-wrap{display:none}
+  .canvas-toolbar .tb-add{padding:6px 9px;font-size:12px}
+  .ac-shot{grid-template-columns:16px 40px minmax(0,1fr);gap:8px}
+  .ac-thumb{width:40px;height:26px}
+}

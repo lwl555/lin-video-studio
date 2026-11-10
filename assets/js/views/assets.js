@@ -72,7 +72,7 @@ export function render(root) {
     });
   }
 
-  page.append(h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+  page.append(h('div', { class: 'page-head-row' },
     h('div', {},
       h('div', { class: 'page-title' }, '资产库'),
       h('div', { class: 'page-sub' }, '角色 · 场景 · 道具 沉淀在这里，任何镜头都能复用，这是不崩脸的关键')),

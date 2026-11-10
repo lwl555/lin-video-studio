@@ -57,7 +57,7 @@ export function renderList(root) {
     : h('div', { class: 'empty' }, h('div', { class: 'empty-icon', html: icon('canvas', 40) }), '还没有画布项目，点右上角新建一个');
 
   root.append(h('div', { class: 'page' },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+    h('div', { class: 'page-head-row' },
       h('div', {},
         h('div', { class: 'page-title' }, '无限画布'),
         h('div', { class: 'page-sub' }, '灵感无边界，创作更自由 — 文本 · 图片 · 视频 · 音频 · 合成 · 导演台')),
@@ -1001,6 +1001,7 @@ export function renderEditor(root, params) {
      否则按住节点里的图拖会拖出「幽灵图」，节点反而不动 */
   wrap.addEventListener('dragstart', e => e.preventDefault());
 
+  /* 鼠标拖动空白处平移画布 */
   wrap.addEventListener('mousedown', e => {
     if (e.target.closest('.node') || e.target.closest('.canvas-toolbar') || e.target.closest('.canvas-topbar')) return;
     deselect();
@@ -1009,6 +1010,85 @@ export function renderEditor(root, params) {
     const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(); };
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   });
+
+  /* 触屏：单指拖动平移、双指捏合缩放（手机上没有滚轮，不补这套就用不了画布） */
+  const touchPts = new Map();
+  let pinch0 = null;
+
+  wrap.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse') return;
+    if (e.target.closest('.node') || e.target.closest('.canvas-toolbar') ||
+      e.target.closest('.canvas-topbar') || e.target.closest('.mm-wrap')) return;
+
+    touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (touchPts.size === 2 && !pinch0) {
+      const [a, b] = [...touchPts.values()];
+      const r = wrap.getBoundingClientRect();
+      pinch0 = {
+        d: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        zoom: vp.zoom,
+        mx: (a.x + b.x) / 2 - r.left,
+        my: (a.y + b.y) / 2 - r.top,
+        vx: vp.x, vy: vp.y,
+      };
+      return;
+    }
+    if (touchPts.size > 1) return;
+
+    deselect();
+    const sx = e.clientX, sy = e.clientY, ox = vp.x, oy = vp.y;
+    const move = ev => {
+      if (touchPts.size > 1) return;                 /* 双指期间交给捏合，不平移 */
+      vp.x = ox + ev.clientX - sx; vp.y = oy + ev.clientY - sy; applyVp();
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', up);
+      save();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', up);
+  });
+
+  wrap.addEventListener('pointermove', e => {
+    if (!touchPts.has(e.pointerId)) return;
+    touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinch0 || touchPts.size !== 2) return;
+    const [a, b] = [...touchPts.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d < 12) return;
+    const nz = Math.min(2.5, Math.max(.25, pinch0.zoom * (d / pinch0.d)));
+    const k = nz / pinch0.zoom;
+    vp.zoom = nz;
+    /* 以双指中点为中心缩放：中点下的那块内容保持不动 */
+    vp.x = pinch0.mx - (pinch0.mx - pinch0.vx) * k;
+    vp.y = pinch0.my - (pinch0.my - pinch0.vy) * k;
+    applyVp();
+  });
+
+  const endTouch = e => {
+    if (!touchPts.has(e.pointerId)) return;
+    touchPts.delete(e.pointerId);
+    if (touchPts.size < 2) { pinch0 = null; save(); }
+  };
+  wrap.addEventListener('pointerup', endTouch);
+  wrap.addEventListener('pointercancel', endTouch);
+  /* 手指在画布外松开（拖出边缘、被工具栏盖住）时 wrap 收不到 up，
+     残留的手指会让「双指捏合」永久失效，所以文档级再兜一次；
+     离开画布页后自己摘掉，避免监听堆积 */
+  const endTouchDoc = e => {
+    if (!wrap.isConnected) {
+      document.removeEventListener('pointerup', endTouchDoc);
+      document.removeEventListener('pointercancel', endTouchDoc);
+      return;
+    }
+    endTouch(e);
+  };
+  document.addEventListener('pointerup', endTouchDoc);
+  document.addEventListener('pointercancel', endTouchDoc);
   wrap.addEventListener('dblclick', e => {
     if (e.target.closest('.node')) return;
     const w = toWorld(e.clientX, e.clientY);

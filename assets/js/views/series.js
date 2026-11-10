@@ -9,7 +9,7 @@ export function render(root) {
   const page = h('div', { class: 'page' });
   root.append(page);
 
-  page.append(h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+  page.append(h('div', { class: 'page-head-row' },
     h('div', {},
       h('div', { class: 'page-title' }, '短剧'),
       h('div', { class: 'page-sub' }, '按剧本批量产出分集内容 · 资产库统一沉淀角色与场景')),
