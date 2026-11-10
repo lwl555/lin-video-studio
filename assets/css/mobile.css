@@ -292,3 +292,14 @@
     .ws-stage{padding-right:max(14px, env(safe-area-inset-right))}
   }
 }
+
+/* ---------- 超窄屏（折叠屏外屏 280~330）：字少一点、控件别换行 ---------- */
+@media (max-width:330px){
+  .ctab{padding:7px 10px;font-size:12.5px;gap:5px}
+  .composer-tabs{gap:6px}
+  .entry-tile{padding:10px}
+  .entry-name{font-size:12.5px}
+  .page-title{font-size:18px}
+  .home-title{font-size:20px}
+  .flow-badge{font-size:10px}
+}
