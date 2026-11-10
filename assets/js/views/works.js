@@ -1,5 +1,6 @@
 /* ============ 作品库 ============ */
 import { h, toast, download, confirm, timeAgo } from '../ui.js';
+import { downloadMedia } from '../watermark.js';
 import { icon } from '../icons.js';
 import { store } from '../store.js';
 
@@ -45,7 +46,7 @@ export function render(root, params = {}) {
           h('div', { class: 'flow-title' }, w.title || '未命名'),
           h('div', { class: 'flow-meta' }, timeAgo(w.createdAt)),
           h('div', { class: 'card-acts' },
-            h('button', { class: 'node-btn', onclick: () => download(w.url, (w.title || 'work') + (w.type === 'video' ? '.mp4' : '.png')) }, '下载'),
+            h('button', { class: 'node-btn', onclick: () => downloadMedia(w.url, (w.title || 'work') + (w.type === 'video' ? '.mp4' : '.png'), w.type === 'video' ? 'video' : 'image') }, '下载'),
             h('button', { class: 'node-btn', onclick: () => navigator.clipboard?.writeText(w.url).then(() => toast('链接已复制', 'ok')) }, '复制链接'),
             h('button', { class: 'node-btn', onclick: async () => { if (await confirm('删除这个作品？')) { store.remove('works', w.id); drawFilters(); drawGrid(); } } }, '删除')))));
     }

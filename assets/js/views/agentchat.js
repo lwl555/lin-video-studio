@@ -5,10 +5,12 @@
    ================================================================ */
 import { h, toast } from '../ui.js';
 import { icon } from '../icons.js';
-import { store, uid } from '../store.js';
+import { store, uid, saveMedia } from '../store.js';
 import { go } from '../app.js';
 import { Agent, STEPS, DONE, newProject } from '../agent.js';
 import { skillLabel, deliverOf } from '../skills.js';
+import { chat } from '../models.js';
+import { ASSISTANT_SYSTEM, wantsProduction, extractDocument } from '../assistant.js';
 
 const STATUS_TXT = {
   idle: '待开始', running: '执行中', waiting: '等你确认', paused: '已暂停', done: '已完成', error: '失败',
@@ -31,11 +33,30 @@ export function render(root, params = {}) {
   const taskEl = h('div', { class: 'ac-task' });
   logEl.append(msgWrap, taskEl);
 
-  const inputEl = h('textarea', { class: 'ac-input', rows: '1', placeholder: '说需求，或接着改……' });
+  const inputEl = h('textarea', { class: 'ac-input', rows: '1', placeholder: '说需求、问问题，或上传图片/文档让我读……' });
   const sendBtn = h('button', { class: 'ac-send', title: '发送' },
     h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>' }));
+
+  /* 附件：图片走多模态，文档抽成文本一起发 */
+  let attach = { images: [], docs: [] };
+  const chipRow = h('div', {
+    style: {
+      display: 'none', flexWrap: 'wrap', gap: '6px', padding: '0 2px 8px',
+      fontSize: '12px', color: 'var(--txt-2)'
+    }
+  });
+  const fileInput = h('input', {
+    type: 'file', multiple: true,
+    accept: 'image/*,.txt,.md,.csv,.json,.docx',
+    style: { display: 'none' }
+  });
+  const attachBtn = h('button', { class: 'ac-send', title: '上传图片或文档（txt/md/csv/json/docx）', onclick: () => fileInput.click() },
+    h('span', { html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' }));
+
   const compose = h('div', { class: 'ac-compose' },
-    h('div', { class: 'ac-box' }, inputEl, sendBtn));
+    chipRow,
+    h('div', { class: 'ac-box' }, attachBtn, inputEl, sendBtn),
+    fileInput);
   rootEl.append(headEl, logEl, compose);
   root.append(rootEl);
 
@@ -107,6 +128,73 @@ export function render(root, params = {}) {
     paintMessages();
   }
 
+  /* ---------- 助手对话（不跑流水线，就真的在聊天/读图/读文档） ---------- */
+  let replying = false;
+  async function chatReply(text, imgs = [], docs = []) {
+    if (replying) return;
+    replying = true;
+    try {
+      const hist = (proj.chat || []).filter(m => !m.stage).slice(-12)
+        .map(m => (m.role === 'user' ? '用户：' : '助手：') + m.text).join('\n');
+      const docPart = docs.length
+        ? '\n\n【用户上传的文档内容】\n' + docs.map(d => '《' + d.name + '》\n' + d.text).join('\n\n')
+        : '';
+      const prompt = '【最近的对话】\n' + hist
+        + '\n\n【用户这次说】\n' + (text || '（只发了附件，没有文字）')
+        + docPart;
+      const out = await chat(prompt, {
+        system: ASSISTANT_SYSTEM,
+        feature: 'agentText',
+        temperature: 0.6,
+        images: imgs
+      });
+      say(String(out || '').trim() || '这次没组织出话来，再说一次试试。', 'reply@' + Date.now());
+    } catch (e) {
+      say('没答上来：' + (e && e.message ? e.message : e), 'err@' + Date.now());
+    } finally {
+      replying = false;
+    }
+  }
+
+  function paintAttach() {
+    chipRow.innerHTML = '';
+    const total = attach.images.length + attach.docs.length;
+    if (!total) { chipRow.style.display = 'none'; return; }
+    chipRow.style.display = 'flex';
+    const chip = (label, onDel) => h('span', {
+      style: {
+        display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 9px',
+        borderRadius: '999px', background: 'var(--brand-soft)', color: 'var(--brand-2)'
+      }
+    }, label, h('b', { style: { cursor: 'pointer' }, onclick: onDel }, '×'));
+    attach.images.forEach((u, i) => chipRow.append(chip('图片 ' + (i + 1), () => { attach.images.splice(i, 1); paintAttach(); })));
+    attach.docs.forEach((d, i) => chipRow.append(chip(d.name, () => { attach.docs.splice(i, 1); paintAttach(); })));
+  }
+
+  function clearAttach() {
+    attach = { images: [], docs: [] };
+    paintAttach();
+  }
+
+  function bindAttach() {
+    fileInput.addEventListener('change', async () => {
+      const files = [...(fileInput.files || [])];
+      fileInput.value = '';
+      for (const f of files) {
+        try {
+          if (String(f.type || '').startsWith('image/')) {
+            attach.images.push(await saveMedia(f));
+          } else {
+            attach.docs.push(await extractDocument(f));
+          }
+        } catch (e) {
+          toast((e && e.message) || '这个文件读不了', 'err', 4600);
+        }
+      }
+      paintAttach();
+    });
+  }
+
   function createProject(text) {
     const p = newProject(text);
     p.chat = [{ id: uid('m'), role: 'user', text, at: Date.now() }];
@@ -128,6 +216,8 @@ export function render(root, params = {}) {
 
   /* ================= 交互 ================= */
   function bindCompose() {
+    bindAttach();
+    paintAttach();
     sendBtn.addEventListener('click', send);
     inputEl.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -143,17 +233,55 @@ export function render(root, params = {}) {
 
   async function send() {
     const text = inputEl.value.trim();
-    if (!text) return;
+    const hasAttach = attach.images.length + attach.docs.length > 0;
+    if (!text && !hasAttach) return;
     inputEl.value = '';
     autosize();
 
-    if (!proj) { createProject(text); return; }
+    const imgs = attach.images.slice();
+    const docs = attach.docs.slice();
+    const note = [
+      imgs.length ? `[图片 ${imgs.length} 张]` : '',
+      docs.length ? docs.map(d => `[文档 ${d.name}]`).join(' ') : ''
+    ].filter(Boolean).join(' ');
+    const line = (text || (hasAttach ? '（附件）' : '')) + (note ? '  ' + note : '');
+
+    /* 还没有项目：先判断这是「问事」还是「要做片」 */
+    if (!proj) {
+      if (hasAttach || !wantsProduction(text)) {
+        proj = newProject(text || docs[0]?.name || '新会话');
+        proj.chat = [];
+        proj.mode = 'chat';
+        store.add('series', proj);
+        mountAgent();
+        paintHead();
+        renderAll();
+        push('user', line);
+        clearAttach();
+        await chatReply(text, imgs, docs);
+        return;
+      }
+      createProject(line);
+      clearAttach();
+      return;
+    }
     if (!agent) mountAgent();
 
     const a = proj.agent;
-    if (a.status === 'running') { push('user', text); return toast('正在执行，可以先暂停再改', 'err'); }
+    if (a.status === 'running') { push('user', line); toast('正在执行，可以先暂停再改', 'err'); return; }
 
-    push('user', text);
+    push('user', line);
+
+    /* 聊天模式 / 带了附件 / 明显不是做片需求 → 走助手对话，不动生产流水线 */
+    const noBoard = !(proj.storyboard || []).length;
+    if (proj.mode === 'chat' || (noBoard && (hasAttach || !wantsProduction(text)))) {
+      proj.mode = 'chat';
+      store.save();
+      clearAttach();
+      await chatReply(text, imgs, docs);
+      return;
+    }
+    clearAttach();
 
     if ((proj.storyboard || []).length) {
       try {

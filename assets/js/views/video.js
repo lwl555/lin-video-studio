@@ -2,6 +2,7 @@
    生成任务在 jobs.js 里常驻执行：切页不中断，回来能恢复历史与进度。
    ============================================ */
 import { h, toast, pickFile, modelSelect, download } from '../ui.js';
+import { downloadMedia } from '../watermark.js';
 import { icon } from '../icons.js';
 import { store, saveMedia } from '../store.js';
 import { providers } from '../models.js';
@@ -153,7 +154,7 @@ export function render(root, params = {}) {
         [...strip.children].forEach((c, j) => c.classList.toggle('active', j === i));
       }
     }, h('video', { src: u, muted: '' }))));
-    if (rs.length) strip.append(h('button', { class: 'btn-ghost', onclick: () => download(rs[0], 'video.mp4') }, '下载'));
+    if (rs.length) strip.append(h('button', { class: 'btn-ghost', onclick: () => downloadMedia(rs[0], 'video.mp4', 'video') }, '下载'));
   }
 
   async function optimize(e) {
