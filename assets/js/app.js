@@ -7,6 +7,7 @@ import { openSupport } from './support.js';
 import { openNotices } from './notice-ui.js';
 import { notices } from './ops.js';
 import { todaySummary, QUOTA_KINDS, KIND_LABEL } from './usage.js';
+import { tierInfo, balanceOf } from './points.js';
 import * as Home from './views/home.js';
 import * as Canvas from './views/canvas.js';
 import * as ImageWs from './views/image.js';
@@ -18,6 +19,7 @@ import * as Assets from './views/assets.js';
 import * as Works from './views/works.js';
 import * as Inspire from './views/inspire.js';
 import * as Settings from './views/settings.js';
+import * as Member from './views/member.js';
 import * as Admin from './views/admin.js';
 
 /* ---------- 认证门禁 ---------- */
@@ -169,11 +171,12 @@ const ROUTES = {
   studio: Studio.render, series: Series.render,
   agent: AgentChat.render,
   assets: Assets.render, works: Works.render, settings: Settings.render,
+  member: Member.render,
   admin: Admin.render
 };
 const NAV_OF = { home: 'inspire', inspire: 'inspire', series: 'series', canvas: 'canvas', 'canvas-edit': 'canvas',
   works: 'works', assets: 'assets', settings: 'settings', image: 'image', video: 'video', studio: 'series',
-  agent: 'series', admin: 'admin' };
+  agent: 'series', admin: 'admin', member: 'member' };
 let current = 'home';
 
 /* 移动端侧栏抽屉：go() 里切页时自动收起（由 bootApp 赋值） */
@@ -204,7 +207,14 @@ function bootApp() {
   didBoot = true;
   const u = auth.user;
   $('#user-name').textContent = u.nick;
-  $('#user-plan').textContent = u.role === 'admin' ? '管理员' : '创作者';
+  const drawPlan = () => {
+    const t = tierInfo(u.account);
+    $('#user-plan').textContent = u.role === 'admin'
+      ? `管理员 · ${balanceOf(u.account)} 积分`
+      : `${t.name} · ${balanceOf(u.account)} 积分`;
+  };
+  drawPlan();
+  window.addEventListener('pavo-points', drawPlan);
   $('#user-avatar').textContent = u.nick.slice(0, 1);
   $('#top-avatar').textContent = u.nick.slice(0, 1);
 

@@ -8,6 +8,22 @@ import { genImage, genVideo } from './models.js';
 const EVT = 'pavo-job';
 const running = { image: false, video: false };
 
+/* 并发闸门：文档 7.2「单用户并发任务上限 2 个」。
+   超出的任务排队等待，而不是静默丢弃（旧逻辑点击第二次会毫无反应）。 */
+const MAX_CONCURRENT = 2;
+let activeCount = 0;
+const waiters = [];
+async function acquire() {
+  if (activeCount < MAX_CONCURRENT) { activeCount++; return; }
+  await new Promise(res => waiters.push(res));
+  activeCount++;
+}
+function release() {
+  activeCount = Math.max(0, activeCount - 1);
+  const next = waiters.shift();
+  if (next) next();
+}
+
 function rootWS() {
   const s = store.state;
   s.ws = s.ws || {};
@@ -40,9 +56,10 @@ export function onJob(fn) {
 }
 
 export async function runImage({ provider, prompt, size, images, title } = {}) {
-  if (running.image) return;
   running.image = true;
-  wsPatch('image', { busy: true, startedAt: Date.now(), error: '' });
+  wsPatch('image', { busy: true, queued: activeCount >= MAX_CONCURRENT, startedAt: Date.now(), error: '' });
+  await acquire();
+  wsPatch('image', { queued: false });
   try {
     const r = await genImage(prompt, { provider, size, images: images || [], feature: 'image' });
     const cur = wsGet('image');
@@ -59,14 +76,16 @@ export async function runImage({ provider, prompt, size, images, title } = {}) {
     wsPatch('image', { busy: false, error: String((e && e.message) || e) });
   } finally {
     running.image = false;
+    release();
     emit('image');
   }
 }
 
 export async function runVideo({ provider, prompt, images, ratio, duration, title } = {}) {
-  if (running.video) return;
   running.video = true;
-  wsPatch('video', { busy: true, startedAt: Date.now(), error: '', progress: '提交任务…' });
+  wsPatch('video', { busy: true, queued: activeCount >= MAX_CONCURRENT, startedAt: Date.now(), error: '', progress: '提交任务…' });
+  await acquire();
+  wsPatch('video', { queued: false, progress: '提交任务…' });
   try {
     const r = await genVideo(prompt, {
       provider, images: images || [], ratio, duration, feature: 'video',
@@ -87,6 +106,7 @@ export async function runVideo({ provider, prompt, images, ratio, duration, titl
     wsPatch('video', { busy: false, progress: '', error: String((e && e.message) || e) });
   } finally {
     running.video = false;
+    release();
     emit('video');
   }
 }

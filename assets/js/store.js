@@ -19,6 +19,8 @@ const DEFAULT = {
   assets: [],                // 资产库
   works: [],                 // 作品
   series: [],                // 短剧
+  points: {},                // 积分钱包：{account: {balance, tier, tierUntil, spent}}
+  pointsLog: [],             // 积分变动明细（含邀请/充值/消费）
   proxy: {                   // Supabase 后端
     url: '',                 // 例 https://xxx.functions.supabase.co/pavo-proxy
     anon: '',                // 可选：匿名 key
@@ -160,6 +162,13 @@ export const auth = {
     }
 
     S.users.push(u); persist();
+
+    /* 开户 + 邀请奖励（动态 import 避免 store ↔ points 循环依赖） */
+    try {
+      const { openAccount } = await import('./points.js');
+      openAccount(u.account, { invitedBy: u.invitedBy || '', viaInvite: !!u.inviteCode });
+    } catch (e) { console.warn('积分开户失败', e); }
+
     return u.approved
       ? { ok: true, invited: true, bonus: u.bonus || null, msg: '邀请码已生效，账号直接开通了' }
       : { ok: true, invited: false, msg: '申请已提交，管理员授权后即可登录' };

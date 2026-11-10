@@ -9,6 +9,7 @@
  * ============================================================ */
 import { store } from './store.js';
 import { opsData, quota, QUOTA_KINDS, KIND_LABEL, dayKey, DAY_MS } from './ops.js';
+import { limitsOf } from './points.js';
 
 /* 保留多少天的明细，避免 localStorage 无限长胖 */
 const KEEP_DAYS = 90;
@@ -67,13 +68,18 @@ function bonusOf(acct) {
   return Math.max(0, Number(b.extra) || 0);
 }
 
-/* 某账号某类型的每日上限；0 = 不限 */
+/* 某账号某类型的每日上限；0 = 不限
+   取值优先级：单人覆盖 → 等级额度（运营文档 V2）→ 全局默认
+   ops.useTierLimits 设为 false 时回退到旧的全局默认口径 */
 export function quotaFor(acct, kind) {
   if (!acct) return 0;
   const u = (store.list('users') || []).find(x => x.account === acct);
   if (u?.role === 'admin') return 0;
   const own = quota.userOf(acct)[kind];
-  const base = own === undefined || own === null ? quota.get(kind) : Math.max(0, Number(own) || 0);
+  let base;
+  if (own !== undefined && own !== null) base = Math.max(0, Number(own) || 0);
+  else if (opsData().useTierLimits !== false) base = limitsOf(acct)[kind];
+  else base = quota.get(kind);
   if (base === 0) return 0;                     // 不限，奖励无意义
   return base + bonusOf(acct);
 }

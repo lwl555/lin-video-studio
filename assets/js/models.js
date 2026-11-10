@@ -1,6 +1,7 @@
 /* ============ 模型接入层（BYOK） ============ */
 import { store, uid } from './store.js';
 import { ensureQuota, addUsage } from './usage.js';
+import { quoteImage, quoteVideo, quoteText, assertAffordable, settle, TEXT_COST_LABEL } from './points.js';
 
 /* 预设：用户一键填充，也可完全自定义 */
 export const PRESETS = [
@@ -150,8 +151,9 @@ function authHeaders(key) {
 
 /* ---------- 文本 ---------- */
 /* temperature 0.7：结构化输出（方案 / 分镜 / JSON）比 0.8 更稳，文案又不至于干瘪 */
-export async function chat(prompt, { provider, feature, system = '', json = false, temperature = 0.7, images = [], timeout, metering = true } = {}) {
-  if (metering) ensureQuota('text');
+export async function chat(prompt, { provider, feature, system = '', json = false, temperature = 0.7, images = [], timeout, metering = true, costKind = 'optimize' } = {}) {
+  let bill = null;
+  if (metering) { ensureQuota('text'); bill = assertAffordable('text', quoteText(costKind)); }
   const p = resolveConn(provider || featureProvider(feature), 'text');
   const content = images.length
     ? [{ type: 'text', text: prompt }, ...images.map(u => ({ type: 'image_url', image_url: { url: u } }))]
@@ -172,7 +174,7 @@ export async function chat(prompt, { provider, feature, system = '', json = fals
     ?? b?.output?.text
     ?? (typeof b.raw === 'string' ? b.raw : '');
   if (!text) throw new Error('模型返回为空：' + JSON.stringify(b).slice(0, 200));
-  if (metering) addUsage('text');          /* 拿到了内容才算一次用量 */
+  if (metering) { addUsage('text'); settle('text', bill, TEXT_COST_LABEL[costKind] || '文本生成'); }   /* 拿到了内容才算一次用量+扣费 */
   if (json) {
     const m = String(text).match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!m) throw new Error('模型未返回 JSON');
@@ -184,6 +186,8 @@ export async function chat(prompt, { provider, feature, system = '', json = fals
 /* ---------- 图像 ---------- */
 export async function genImage(prompt, { provider, feature, size = '1024x1024', n = 1, images = [] } = {}) {
   ensureQuota('image');
+  /* 额度内不扣积分；额度外要求余额够，否则抛错（按钮据此提示充值） */
+  const bill = assertAffordable('image', quoteImage(size, { withRef: images.length > 0, n }));
   const p = resolveConn(provider || featureProvider(feature), 'image');
   const body = { model: p.model, prompt, n, size };
   if (images.length) body.image = images[0];
@@ -196,12 +200,19 @@ export async function genImage(prompt, { provider, feature, size = '1024x1024', 
   if (!url && b?.images?.[0]?.url) url = b.images[0].url;
   if (!url) throw new Error('图像生成失败：' + JSON.stringify(b).slice(0, 250));
   addUsage('image', Math.max(1, Math.round(Number(n) || 1)));   /* 按张数计 */
+  settle('image', bill, `图片 ${size}${images.length ? ' · 图生图' : ''}`);
   return { url, raw: b };
 }
 
 /* ---------- 视频（Agnes 异步任务：POST /v1/videos → GET /agnesapi?video_id=） ---------- */
 export async function genVideo(prompt, { provider, feature, images = [], duration = 5, ratio = '16:9', motion, firstFrame, lastFrame, onProgress } = {}) {
   ensureQuota('video');
+  /* 按秒计价：480P 3/秒、720P 8/秒、2K 15/秒；首尾帧 +20%，参考图 +30% */
+  const bill = assertAffordable('video', quoteVideo(duration, {
+    resolution: '720P',
+    keyframe: !!(firstFrame || lastFrame),
+    ref: images.filter(Boolean).length > 0
+  }));
   const p = resolveConn(provider || featureProvider(feature), 'video');
   const base = p.baseUrl;                                          // 例如 https://api.agnes-ai.cn/v1
   /* Agnes Video 2.5：创建在 {base}/videos，轮询在 {origin}/agnesapi（注意不带 /v1）；
@@ -239,7 +250,7 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
   const res = await request(submitPath, { base, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 90000 });
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
-  if (direct) { addUsage('video'); return { url: direct, raw: b }; }
+  if (direct) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); return { url: direct, raw: b }; }
   const id = b?.video_id || b?.id || b?.task_id || b?.data?.video_id || b?.data?.id;
   if (!id) throw new Error('视频任务提交失败（未取到任务 ID）：' + JSON.stringify(b).slice(0, 250));
 
@@ -257,10 +268,10 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
     const url = sb?.url || sb?.video_url || sb?.data?.url || sb?.result?.url;
     if (done) {
       if (!url) throw new Error('任务完成但未返回视频地址：' + JSON.stringify(sb).slice(0, 200));
-      addUsage('video');
+      addUsage('video'); settle('video', bill, `视频 ${duration}s`);
       return { url, raw: sb };
     }
-    if (url) { addUsage('video'); return { url, raw: sb }; }
+    if (url) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); return { url, raw: sb }; }
     if (fail) throw new Error('视频生成失败：' + JSON.stringify(sb.error || sb).slice(0, 200));
   }
   throw new Error('视频生成超时，请稍后重试');

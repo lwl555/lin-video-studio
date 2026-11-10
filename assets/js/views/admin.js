@@ -11,10 +11,12 @@ import { notices, invites, defaultModels, quota, fmtDate, KIND_LABEL, QUOTA_KIND
 import { overview, dailySeries, resetToday } from '../usage.js';
 import { openSupport, copyText, inviteMessage } from '../support.js';
 import { backendProvider } from '../backend.js';
+import { TIERS, TIER_ORDER, RECHARGE, adminRows, costBoard, grant, setTier } from '../points.js';
 
 const TABS = [
   { k: 'overview', label: '概览' },
   { k: 'users', label: '用户与额度' },
+  { k: 'points', label: '积分与成本' },
   { k: 'usage', label: '用量统计' },
   { k: 'notice', label: '公告' },
   { k: 'invite', label: '邀请奖励' },
@@ -60,6 +62,7 @@ export function render(root) {
   function section() {
     switch (tab) {
       case 'users': return usersSection();
+      case 'points': return pointsSection();
       case 'usage': return usageSection();
       case 'notice': return noticeSection();
       case 'invite': return inviteSection();
@@ -68,7 +71,111 @@ export function render(root) {
     }
   }
 
-  /* ---------------- 概览 ---------------- */
+  /* ---------------- 积分与成本（运营文档 V2） ---------------- */
+  function pointsSection() {
+    const b = costBoard();
+    const rows = b.rows;
+
+    /* 预警 */
+    const alertList = h('div', { class: 'adm-users' });
+    for (const a of b.alerts) {
+      const info = h('div', { class: 'adm-user-info' });
+      info.append(
+        h('div', { class: 'adm-user-name' }, a.level === 'warn' ? '⚠ 预警' : '✓ 正常'),
+        h('div', { class: 'adm-user-meta' }, h('span', {}, a.text))
+      );
+      alertList.append(h('div', { class: 'adm-user' }, h('div', { class: 'adm-user-main' }, info)));
+    }
+    const alertCard = h('div', { class: 'adm-card' },
+      h('div', { class: 'adm-card-title' }, '成本预警'), alertList);
+
+    /* 账号与积分 */
+    const userList = h('div', { class: 'adm-users' });
+    if (!rows.length) userList.append(h('div', { class: 'hint' }, '还没有注册用户。'));
+    for (const r of rows) {
+      const info = h('div', { class: 'adm-user-info' });
+      const nm = h('div', { class: 'adm-user-name' }, r.nick);
+      nm.append(h('span', {
+        class: 'pill',
+        style: {
+          background: r.tier === 'free' ? 'var(--bg)' : 'var(--brand-soft)',
+          color: r.tier === 'free' ? 'var(--txt-3)' : 'var(--brand-2)'
+        }
+      }, r.tierName));
+      if (!r.approved) nm.append(h('span', { class: 'pill', style: { background: '#FDECEC', color: '#c0392b' } }, '待授权'));
+      info.append(nm);
+      const meta = h('div', { class: 'adm-user-meta' });
+      meta.append(
+        h('span', {}, '余额 ' + r.balance + ' 积分'),
+        h('span', {}, '今日消耗 ' + r.todaySpent),
+        h('span', {}, '累计消耗 ' + r.spent)
+      );
+      if (r.tierUntil) meta.append(h('span', {}, '到期 ' + fmtDate(r.tierUntil)));
+      info.append(meta);
+
+      const acts = h('div', { class: 'adm-user-acts' });
+      for (const n of [10, 50, 100]) {
+        acts.append(h('button', {
+          class: 'node-btn sm',
+          onclick: () => {
+            grant(r.account, n, '管理员手动充值');
+            toast('+' + n + ' 积分 → ' + r.nick, 'ok');
+            draw();
+          }
+        }, '+' + n));
+      }
+      acts.append(h('button', {
+        class: 'node-btn sm',
+        onclick: () => { setTier(r.account, 'basic', 30); toast(r.nick + ' 已开通普通会员 30 天', 'ok'); draw(); }
+      }, '普通月'));
+      acts.append(h('button', {
+        class: 'node-btn sm',
+        onclick: () => { setTier(r.account, 'pro', 30); toast(r.nick + ' 已开通高级会员 30 天', 'ok'); draw(); }
+      }, '高级月'));
+      acts.append(h('button', {
+        class: 'node-btn sm',
+        onclick: () => { setTier(r.account, 'free', 0); toast(r.nick + ' 已回落体验用户', 'ok'); draw(); }
+      }, '降级'));
+
+      userList.append(h('div', { class: 'adm-user' }, h('div', { class: 'adm-user-main' }, info), acts));
+    }
+
+    function manualRecharge() {
+      const acct = prompt('给哪个账号加积分？（输手机号）');
+      if (!acct) return;
+      const n = Number(prompt('加多少积分？（1 元 = 10 积分）', '100') || 0);
+      if (!n) return;
+      grant(String(acct).trim(), n, '管理员手动充值');
+      toast('已加 ' + n + ' 积分', 'ok');
+      draw();
+    }
+
+    const head = h('div', { class: 'adm-card-head' },
+      h('div', { class: 'adm-card-title', style: { marginBottom: 0 } }, '账号与积分'),
+      h('div', { class: 'adm-acts', style: { marginTop: 0 } },
+        h('button', { class: 'node-btn', onclick: manualRecharge }, '手动充值')));
+    const userCard = h('div', { class: 'adm-card' }, head, userList);
+
+    /* 价目表 */
+    const priceCard = h('div', { class: 'adm-card' },
+      h('div', { class: 'adm-card-title' }, '价目表（用户端自动生效）'),
+      h('div', { class: 'adm-legend' },
+        h('span', {}, '图片：1024 = 2 积分 / 1536 = 3 / 2048 = 5，图生图 +50%'),
+        h('span', {}, '视频：480P 3/秒 · 720P 8/秒 · 2K 15/秒，首尾帧 +20%，参考图 +30%'),
+        h('span', {}, '文本：AI 优化 1 / 剧情脚本 5 / 分镜 10'),
+        h('span', {}, '充值：' + RECHARGE.map(x => x.yuan + ' 元 = ' + x.points + ' 积分').join(' · '))));
+
+    return h('div', {},
+      h('div', { class: 'adm-stats' },
+        statCard('今日消耗积分', b.todayPoints, '约合 ' + b.todayYuan + ' 元', 'brand'),
+        statCard('本月消耗积分', b.monthPoints, '约合 ' + b.monthYuan + ' 元'),
+        statCard('未消费余额', b.issuePoints, '约合 ' + Math.round(b.issuePoints / 10) + ' 元（已发未用）'),
+        statCard('今日出图 / 出片', b.agnes.imgToday + ' / ' + b.agnes.vidToday,
+          'Agnes 额度占用 ' + b.agnes.imgPct + '% / ' + b.agnes.vidPct + '%',
+          b.agnes.imgPct >= 80 ? 'warn' : '')),
+      alertCard, userCard, priceCard);
+  }
+
   function statCard(label, value, sub, tone = '') {
     return h('div', { class: 'adm-stat ' + tone },
       h('div', { class: 'adm-stat-label' }, label),
