@@ -185,7 +185,8 @@ async function request(path, { base, own = false, method = 'POST', headers = {},
   } catch (e) {
     if (e?.name === 'AbortError') throw new Error(`请求超时（${secs} 秒无响应）`);
     if (e instanceof TypeError) {
-      /* 网络层失败：先换备用域名再试一次（Agnes 同 key 双通道，手机 DNS 解析不了 .cn 时能救回来） */
+      /* 网络层失败。注意：视频端点 /v1/videos 在限流时会给「无 CORS 头的 429」，
+         浏览器同样表现为 TypeError，所以这里要允许上层按 .network 重试。 */
       const altBase = !__alt && /api\.agnes-ai\.cn/.test(String(base || ''))
         ? String(base).replace('api.agnes-ai.cn', 'apihub.agnes-ai.com')
         : '';
@@ -194,9 +195,11 @@ async function request(path, { base, own = false, method = 'POST', headers = {},
           return await request(path, { base: altBase, own, method, headers, body, timeout, __alt: true });
         } catch (e2) { /* 备用也失败，落到下面统一报错 */ }
       }
-      throw new Error(`连不上模型服务（网络层失败）：可能 ①手机网络/DNS 解析不了 api.agnes-ai.cn（已自动试过备用域名 apihub.agnes-ai.com）；` +
-        `②公司或运营商拦截；③浏览器插件（广告拦截）拦了；④代理/VPN 未生效。` +
-        `可到「设置 → AI 后台 → 测试连接」自查。`);
+      const err = new Error(`连不上模型服务：可能 ①手机网络/DNS 解析不了 api.agnes-ai.cn（已自动试过备用域名）；` +
+        `②服务端限流/排队时返回的头不完整，浏览器会误报成跨域失败（视频通道最常见）；` +
+        `③浏览器插件拦截；④代理未生效。`);
+      err.network = true;
+      throw err;
     }
     throw e;
   } finally {
@@ -334,7 +337,32 @@ export async function genVideo(prompt, { provider, feature, images = [], duratio
   }
 
   onProgress?.('提交视频任务…');
-  const res = await request(submitPath, { base, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 90000 });
+  /* 视频通道免费档很挤：排队/限流时服务端返回「无 CORS 头的 429」，浏览器只会给一个
+     TypeError。所以这里按网络错误与 429/503 退避重试，别让用户以为是自己网络断了。 */
+  const waits = [0, 8000, 20000, 40000];
+  let lastErr = null;
+  let res = null;
+  for (let attempt = 0; attempt < waits.length; attempt++) {
+    if (waits[attempt]) {
+      onProgress?.(`视频通道排队中，${Math.round(waits[attempt] / 1000)} 秒后重试（${attempt}/${waits.length - 1}）…`);
+      await new Promise(r => setTimeout(r, waits[attempt]));
+      onProgress?.('提交视频任务…');
+    }
+    try {
+      res = await request(submitPath, { base, own: p.own, headers: authHeaders(p.apiKey), body, timeout: 90000 });
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      const retryable = e && (e.network === true || /HTTP (429|503)/.test(String(e.message)));
+      if (!retryable) throw e;
+      if (attempt === waits.length - 1) {
+        throw new Error('视频通道一直在排队或限流（免费档常见，不是你的网络问题）。' +
+          '过 1-2 分钟再试，或把视频模型换成别的通道；文字和图片不受影响。');
+      }
+    }
+  }
+  if (!res && lastErr) throw lastErr;
   const b = res.body || {};
   const direct = b?.video_url || b?.url || b?.data?.url;
   if (direct) { addUsage('video'); settle('video', bill, `视频 ${duration}s`); chargeModelQuota(p, vidCost); return { url: direct, raw: b }; }
