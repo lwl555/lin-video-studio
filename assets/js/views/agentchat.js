@@ -11,6 +11,7 @@ import { Agent, STEPS, DONE, newProject } from '../agent.js';
 import { skillLabel, deliverOf } from '../skills.js';
 import { chat } from '../models.js';
 import { ASSISTANT_SYSTEM, wantsProduction, extractDocument } from '../assistant.js';
+import { verdictLine } from '../verify.js';
 
 const STATUS_TXT = {
   idle: '待开始', running: '执行中', waiting: '等你确认', paused: '已暂停', done: '已完成', error: '失败',
@@ -117,8 +118,8 @@ export function render(root, params = {}) {
     }
     if (a.status === 'waiting') {
       if (a.pending === 'assemble') return say('镜头都出好了，去合成成片吧。', key);
-      if (a.pending === 'outline') return say('方案和角色 / 场景拆好了，你看一眼，确认后我出定妆图。', key);
-      if (a.pending === 'storyboard') return say(`分镜排好了，共 ${proj.storyboard.length} 个镜头。哪条不顺直接在这说，我只改那条。`, key);
+      if (a.pending === 'outline') return say('方案和角色 / 场景拆好了。' + verdictLine(proj.verify?.outline, '剧情') + ' 看一眼，确认后我出定妆图。', key);
+      if (a.pending === 'storyboard') return say(`分镜排好了，共 ${proj.storyboard.length} 个镜头。` + verdictLine(proj.verify?.storyboard, '分镜') + ' 哪条不顺直接在这说，我只改那条。', key);
       if (a.pending === 'video') return say(`${proj.storyboard.length} 个镜头视频都出好了，检查一下，没问题就去合成。`, key);
       return say(`「${gateLabel(a.pending)}」准备好了，确认后继续。`, key);
     }
@@ -442,6 +443,31 @@ export function render(root, params = {}) {
     if ((proj.storyboard || []).length) taskEl.append(nudgeRow());
   }
 
+  /* 自检结果卡片：分数 + 待处理问题 + 已自动修正的镜头 */
+  function verifyBlock(v, label) {
+    if (!v) return null;
+    const bad = (v.issues || []).filter(x => x.level !== 'low');
+    const box = h('div', {});
+    box.append(h('div', {
+      class: 'ac-sect',
+      style: { color: v.pass ? 'var(--ok)' : 'var(--warn)', marginTop: '10px' }
+    }, `${label}自检 ${v.score || '-'} 分 · ${v.pass ? '通过' : bad.length + ' 处待处理'}`));
+
+    if (v.logic) box.append(h('div', { class: 'ac-logline', style: { paddingTop: '0' } }, v.logic));
+
+    if (bad.length) {
+      box.append(h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '6px' } },
+        ...bad.slice(0, 6).map(x => h('div', {
+          style: { fontSize: '12px', color: 'var(--txt-2)', lineHeight: '1.5' }
+        }, (x.level === 'high' ? '⛔ ' : '⚠ ') + x.where + '：' + x.problem))));
+    }
+    if (v.patched && v.patched.length) {
+      box.append(h('div', { style: { fontSize: '11.5px', color: 'var(--ok)' } },
+        `已自动修正镜头 ${v.patched.join('、')}`));
+    }
+    return box;
+  }
+
   function productBlocks(a) {
     const out = [];
     if (proj.think) out.push(thinkBlock(proj.think));
@@ -463,6 +489,10 @@ export function render(root, params = {}) {
       if (proj.outline.synopsis) {
         out.push(h('div', { class: 'ac-sect' }, '剧情梗概'));
         out.push(h('div', { class: 'ac-logline' }, proj.outline.synopsis));
+      }
+      if (proj.verify?.outline) {
+        const vb = verifyBlock(proj.verify.outline, '剧情');
+        if (vb) out.push(vb);
       }
       const list = [...(proj.outline.characters || []), ...(proj.outline.scenes || [])];
       if (list.length) {
@@ -512,6 +542,10 @@ export function render(root, params = {}) {
           h('div', { class: 'ac-shot-m' }, `${s.shot || ''} · ${s.camera || ''} · ${s.dur || 5}s`)));
       }
       out.push(rows);
+      if (proj.verify?.storyboard) {
+        const vb = verifyBlock(proj.verify.storyboard, '分镜');
+        if (vb) out.push(vb);
+      }
     }
     if (!out.length) {
       out.push(h('div', { class: 'ac-hint' }, a.status === 'running' ? '正在理解你的创意…' : '还没开始，发一句话就开工。'));

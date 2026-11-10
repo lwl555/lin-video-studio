@@ -13,6 +13,7 @@ import { store, uid } from './store.js';
 import { chat, genImage, genVideo } from './models.js';
 import { SKILLS, skillCatalog, hasSkill, deliverOf } from './skills.js';
 import { charPrompt, charDetailPrompt, scenePrompt, sceneDetailPrompt, imagePrompt, videoPrompt } from './prompts.js';
+import { verifyOutline, verifyStoryboard } from './verify.js';
 const SKILL_KEYS = new Set(SKILLS.map(s => s.key));
 
 export const STEPS = [
@@ -163,6 +164,13 @@ ${WRITING_RULES}
       scenes: (r.scenes || []).map(c => ({ name: c.name || '未命名', env: c.env || '', light: c.light || '', image: '' })),
       props: r.props || [],
     };
+
+    /* 出完先自检：确定性检查 + 模型评审，结果挂到 proj.verify，卡片上给用户看 */
+    tick('自检剧情逻辑…', 22);
+    try {
+      const v = await verifyOutline(proj);
+      proj.verify = { ...(proj.verify || {}), outline: v };
+    } catch (e) { /* 自检失败不阻断 */ }
   },
 
   async assets(proj, tick) {
@@ -254,6 +262,13 @@ ${WRITING_RULES}
       return { ...shot, ...routeShot(shot, proj), frame: '', video: '', status: '' };
     });
     if (!proj.storyboard.length) throw new Error('模型没有给出可用分镜');
+
+    /* 逐镜自检：确定性检查（时长/景别/人设/重复）+ 模型评审，能自动修的当场修 */
+    tick('逐镜检查逻辑与连贯性…', 28);
+    try {
+      const v = await verifyStoryboard(proj);
+      proj.verify = { ...(proj.verify || {}), storyboard: v };
+    } catch (e) { /* 自检失败不阻断 */ }
   },
 
   async frames(proj, tick) {
