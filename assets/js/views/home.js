@@ -86,7 +86,7 @@ export function render(root, params = {}) {
     if (mode === 'image' && !prompt) return toast('先写点画面描述', 'err');
     if (mode === 'video' && !prompt) return toast('先写点镜头描述', 'err');
     if (mode === 'studio') return go('studio', { prompt });
-    if (mode === 'agent') return runAgent(prompt);
+    if (mode === 'agent') return go('studio', prompt ? { prompt } : {});
     go(mode, { prompt, refs: refs.map(r => r.url) });
   };
 
@@ -112,8 +112,10 @@ export function render(root, params = {}) {
   /* 创作入口四宫格 */
   const entryGrid = h('div', { class: 'entry-grid' },
     ...ENTRIES.map(e => h('button', { class: 'entry-tile', onclick: () => {
-      if (e.k === 'agent') return runAgent();
-      if (e.k === 'studio') return go('studio');
+      if (e.k === 'agent' || e.k === 'studio') {
+        const p = ta.value.trim();
+        return go('studio', p ? { prompt: p } : {});
+      }
       mode = e.k; redrawTabs(); ta.placeholder = MODES.find(m => m.k === e.k).ph; syncModel();
       ta.focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
     } },
