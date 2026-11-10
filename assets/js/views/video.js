@@ -64,6 +64,9 @@ export function render(root, params = {}) {
   const statusLine = h('div', { class: 'hint', style: { textAlign: 'center', marginTop: '12px' } }, '');
 
   const genBtn = h('button', { class: 'btn-primary', style: { width: '100%' }, onclick: generate }, '生成视频');
+  /* 移动端表单很长，结果区会被推到屏幕外；这一行状态始终贴在按钮下方，
+     保证「生成中 / 进度 / 完成 / 错误」在可视区内也能看到 */
+  const panelStatus = h('div', { class: 'ws-panel-status hidden' });
 
   root.append(h('div', { class: 'ws' },
     h('div', { class: 'ws-panel' },
@@ -78,6 +81,7 @@ export function render(root, params = {}) {
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '画面比例'), ratioRow),
       h('div', { class: 'form-group' }, h('label', { class: 'form-label' }, '时长'), durRow),
       genBtn,
+      panelStatus,
       h('div', { class: 'hint' }, '生成任务会常驻执行，切到别的页面也会继续；回来能看到进度和历史。')),
     h('div', { class: 'ws-stage' }, stage, statusLine, strip)));
 
@@ -115,7 +119,29 @@ export function render(root, params = {}) {
     }
     genBtn.disabled = !!s.busy;
     genBtn.textContent = s.busy ? '生成中…' : '生成视频';
+    /* 状态行：始终贴在按钮下方，移动端不滚也能看到进度/结果 */
+    if (s.busy) {
+      panelStatus.className = 'ws-panel-status busy';
+      panelStatus.textContent = s.progress || ('生成中…（已等待 ' + elapsed(s.startedAt) + '）');
+    } else if (s.error) {
+      panelStatus.className = 'ws-panel-status err';
+      panelStatus.textContent = '出错了：' + s.error;
+    } else if (rs.length) {
+      panelStatus.className = 'ws-panel-status ok';
+      panelStatus.textContent = '已完成，共 ' + rs.length + ' 段，结果见下方 ↓';
+    } else {
+      panelStatus.className = 'ws-panel-status hidden';
+      panelStatus.textContent = '';
+    }
     drawStrip();
+  }
+
+  /* 把结果区滚入视口（移动端表单很长，.ws 内部可滚动）。
+     在「开始生成」和「出结果」时调用，让进度/画面始终可见 */
+  function revealStage() {
+    try {
+      stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch { try { stage.scrollIntoView(); } catch { /* ignore */ } }
   }
 
   function drawStrip() {
@@ -152,6 +178,7 @@ export function render(root, params = {}) {
 
     saveForm();
     const imgs = [frames.first, frames.last, frames.ref].filter(Boolean);
+    requestAnimationFrame(() => revealStage());          // 立即把结果区（含进度）滚入视口
     await runVideo({ provider: p, prompt: raw, images: imgs, ratio, duration, title: raw });
     paint();
   }
@@ -162,10 +189,17 @@ export function render(root, params = {}) {
   let saveT = 0;
   ta.addEventListener('input', () => { clearTimeout(saveT); saveT = setTimeout(saveForm, 400); });
 
+  let seenResults = (wsGet('video').results || []).length;
   let off = null;
   off = onJob(kind => {
     if (!stage.isConnected) { off && off(); return; }
-    if (kind === 'video') paint();
+    if (kind === 'video') {
+      const s = wsGet('video');
+      const n = (s.results || []).length;
+      paint();
+      /* 刚出结果时把画面滚入视口，确保用户看到生成结果 */
+      if (!s.busy && n > seenResults) { seenResults = n; revealStage(); }
+    }
   });
 
   const timer = setInterval(() => {
@@ -174,5 +208,8 @@ export function render(root, params = {}) {
     if (!s.busy) return;
     const t = stage.querySelector('.ws-time');
     if (t) t.textContent = '已等待 ' + elapsed(s.startedAt);
+    if (!panelStatus.classList.contains('hidden')) {
+      panelStatus.textContent = s.progress || ('生成中…（已等待 ' + elapsed(s.startedAt) + '）');
+    }
   }, 1000);
 }

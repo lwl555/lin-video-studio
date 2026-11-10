@@ -104,7 +104,11 @@
   .ws{display:flex;flex-direction:column;height:100%;overflow-y:auto}
   .ws-panel{display:block;flex:none;border-right:none;border-bottom:1px solid var(--line);
     padding:14px 13px;overflow:visible;background:#fff}
-  .ws-stage{padding:14px 13px calc(20px + env(safe-area-inset-bottom));justify-content:flex-start}
+  /* flex:none 必须写：.ws-stage 自身 overflow-y:auto 时，它在纵向 flex 里的自动最小高度是 0，
+     表单比屏幕高就会把它压到只剩内边距 —— 结果区连同生成完的图/视频一起高度归零（手机端「生成中看不到画面」的真凶）。
+     改成不参与收缩 + 不自己滚动，由外层 .ws 整体滚动 */
+  .ws-stage{padding:14px 13px calc(20px + env(safe-area-inset-bottom));justify-content:flex-start;
+    flex:none;overflow:visible;min-height:0}
   .stage-box{width:100%;border-radius:12px}
   .result-strip{justify-content:flex-start;gap:8px;width:100%}
   .result-thumb{width:78px;height:50px}
