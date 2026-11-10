@@ -671,6 +671,68 @@ a{cursor:pointer;text-decoration:none;color:inherit}
 .canvas-viewport.layout-anim .node:not(.dragging){
   transition:left .34s cubic-bezier(.4,0,.2,1),top .34s cubic-bezier(.4,0,.2,1),box-shadow .15s}
 
+/* ---------- Agent 创作代理工作台 ---------- */
+.mode-switch{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px}
+.mode-btn{padding:5px 14px;border-radius:7px;font-size:12.5px;color:var(--txt-2);transition:.15s}
+.mode-btn:hover{color:var(--txt)}
+.mode-btn.active{background:#fff;color:var(--txt);box-shadow:var(--shadow-s);font-weight:600}
+
+.agent-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}
+.agent-head-tags{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+.agent-bar{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fff;
+  border:1px solid var(--line);border-radius:10px;margin-bottom:16px;flex-wrap:wrap}
+.agent-state{font-size:12px;padding:3px 9px;border-radius:7px;background:var(--bg);
+  color:var(--txt-2);border:1px solid var(--line);white-space:nowrap}
+.agent-state.running,.agent-state.waiting,.agent-state.paused{color:#8a6d1f;background:#FFF8E8;border-color:#F3DFA8}
+.agent-state.done{color:var(--ok);background:#EFFBF5;border-color:rgba(16,185,129,.3)}
+.agent-state.error{color:var(--err);background:#FEF2F2;border-color:#FECACA}
+.agent-progress{font-size:12px;color:var(--brand-2);opacity:0;transition:.2s;max-width:420px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-progress.on{opacity:1}
+
+.step.wait{border-color:#F3DFA8;background:#FFF8E8;color:#8a6d1f}
+.step.err{border-color:#FECACA;background:#FEF2F2;color:var(--err)}
+
+.agent-foot{display:flex;gap:10px;align-items:center;margin-top:20px;flex-wrap:wrap}
+.gate-note{font-size:12.5px;color:var(--txt-2)}
+.agent-err{font-size:12.5px;color:var(--err);display:flex;align-items:center;gap:6px;flex:1;min-width:220px}
+
+/* 自然语言局部调整 */
+.nudge-box{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:14px}
+.nudge-h{font-size:12px;color:var(--txt-2);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+
+/* 分镜审阅表 */
+.shot-head{display:grid;grid-template-columns:34px 1fr 150px 150px 120px;gap:12px;
+  padding:0 12px 6px;font-size:11px;color:var(--txt-3)}
+.shot-row.edit{display:grid;grid-template-columns:34px 1fr 150px 150px 120px;gap:12px;align-items:start}
+.shot-input{width:100%;font-size:12.5px;line-height:1.6;padding:7px 9px;border:1px solid var(--line-2);
+  border-radius:8px;background:#fff;resize:vertical;font-family:inherit;margin-bottom:6px}
+.shot-input:focus{border-color:var(--brand);outline:none}
+.shot-fields{display:flex;flex-direction:column;gap:6px}
+.dur-wrap{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--txt-3)}
+.shot-model{display:flex;flex-direction:column;gap:5px}
+.route-note{font-size:10.5px;color:var(--txt-3);line-height:1.45}
+.route-note.ok{color:var(--brand-2)}
+.shot-state{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.badge.ok{background:#EFFBF5;color:var(--ok);border-color:rgba(16,185,129,.3)}
+.badge.warn{background:#FFF8E8;color:#8a6d1f;border-color:#F3DFA8}
+
+.asset-thumb{aspect-ratio:1;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.asset-thumb.wide{aspect-ratio:16/9}
+.asset-thumb img,.asset-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+
+.btn-primary.sm,.btn-ghost.sm{padding:5px 11px;font-size:12px;border-radius:8px}
+.form-input.sm,.form-select.sm,.form-area.sm{padding:6px 9px;font-size:12.5px;border-radius:8px}
+
+.agent-log{margin-top:22px;border-top:1px solid var(--line);padding-top:10px;font-size:12px}
+.agent-log summary{cursor:pointer;color:var(--txt-2);font-size:12px;outline:none}
+.log-row{display:grid;grid-template-columns:70px 90px 1fr;gap:10px;padding:4px 0;
+  color:var(--txt-2);border-bottom:1px dashed var(--line)}
+.log-row.err{color:var(--err)}
+.log-t{color:var(--txt-3);font-variant-numeric:tabular-nums}
+.log-s{color:var(--txt-3)}
+
 @media (max-width:1100px){
   .auth{grid-template-columns:1fr}
   .auth-visual{display:none}
